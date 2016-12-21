@@ -9,7 +9,7 @@ import xonsh.platform as xp
 from xonsh.completers.path import _quote_paths
 
 BASH_COMPLETE_SCRIPT = r"""
-{source}
+{sources}
 
 # Override some functions in bash-completion, do not quote for readline
 quote_readline()
@@ -58,8 +58,8 @@ for ((i=0;i<${{#COMPREPLY[*]}};i++)) do echo ${{COMPREPLY[i]}}; done
 
 def complete_from_bash(prefix, line, begidx, endidx, ctx):
     """Completes based on results from BASH completion."""
-    source = _get_completions_source()
-    if not source:
+    sources = _get_completions_source()
+    if not sources:
         return set()
 
     if prefix.startswith('$'):  # do not complete env variables
@@ -83,7 +83,7 @@ def complete_from_bash(prefix, line, begidx, endidx, ctx):
         prefix_quoted = shlex.quote(prefix)
 
     script = BASH_COMPLETE_SCRIPT.format(
-        source=source, line=' '.join(shlex.quote(p) for p in splt),
+        sources='\n'.join(sources), line=' '.join(shlex.quote(p) for p in splt),
         comp_line=shlex.quote(line), n=n, cmd=shlex.quote(cmd),
         end=endidx + 1, prefix=prefix_quoted, prev=shlex.quote(prev),
     )
@@ -119,7 +119,11 @@ def complete_from_bash(prefix, line, begidx, endidx, ctx):
 
 def _get_completions_source():
     completers = builtins.__xonsh_env__.get('BASH_COMPLETIONS', ())
+    sources = []
     for path in map(pathlib.Path, completers):
         if path.is_file():
-            return 'source "{}"'.format(path.as_posix())
-    return None
+            sources.append('source "{}"'.format(path.as_posix()))
+        elif path.is_dir():
+            for _file in (x for x in path.glob('*') if x.is_file()):
+                sources.append('source "{}"'.format(_file.as_posix()))
+    return sources
