@@ -363,3 +363,5 @@ def main_context(argv=None):
     args = premain(argv)
     yield builtins.__xonsh_shell__
     postmain(args)
+
+print('hi dev guide')

@@ -18,16 +18,65 @@ tasks = LazyObject(collections.deque, globals(), 'tasks')
 # exit can kill all jobs and exit.
 _last_exit_time = None
 
+import psutil
+
+
+def _print_job_info(job):
+    ps = []
+    if isinstance(job, int):
+        try:
+            p = psutil.Process(job)
+        except:
+            print('no process of {}'.format(job))
+        ps.append(p)
+    else:
+        for pid in job['pids']:
+            try:
+                p = psutil.Process(pid)
+            except:
+                print('no process of {}'.format(pid))
+                continue
+            ps.append(p)
+    for p in ps:
+        print('')
+        try:
+            print('[{}] {} - {}'.format(p.pid, p.cmdline(), p.status()))
+        except:
+            try:
+                print('[{}] {}'.format(p.pid, p.status()))
+            except:
+                print('[{}] not ready?'.format(p.pid))
+
 
 if ON_DARWIN:
     def _send_signal(job, signal):
+        print('+' * 20)
+        _print_job_info(job)
+        print('+' * 20)
+
+        # if signal == signal.SIGCONT:
+        #     for pid in job['pids']:
+        #         try:
+        #             p = psutil.Process(pid)
+        #         except:
+        #             continue
+        #         if p.status() != 'stopped':
+        #             continue
+        #         os.kill(pid, signal)
+
         # On OS X, os.killpg() may cause PermissionError when there are
         # any zombie processes in the process group.
         # See github issue #1012 for details
+        i = -1
         for pid in job['pids']:
+            i += 1
             if pid is None:  # the pid of an aliased proc is None
                 continue
-            os.kill(pid, signal)
+            try:
+                os.kill(pid, signal)
+                print('send {} SIG to pid {}'.format(signal, pid))
+            except Exception as e:
+                print('=== error {} with pid: {} signal: {}'.format(e, pid, signal))
 elif ON_WINDOWS:
     pass
 elif ON_CYGWIN:
@@ -92,9 +141,12 @@ if ON_WINDOWS:
 
 else:
     def _continue(job):
+        print('enter continue ----')
         _send_signal(job, signal.SIGCONT)
+        print('leave continue ++++')
 
     def _kill(job):
+        print('_kill job: {}'.format(job['pids']))
         _send_signal(job, signal.SIGKILL)
 
     def ignore_sigtstp():
@@ -168,11 +220,16 @@ else:
         Wait for the active job to finish, to be killed by SIGINT, or to be
         suspended by ctrl-z.
         """
+        print('=== [jobs] enter wait_for_active_job() ..')
+        print('=== 0')
         _clear_dead_jobs()
         active_task = get_next_task()
         # Return when there are no foreground active task
         if active_task is None:
+            print('=== 0.3')
             _give_terminal_to(_shell_pgrp)  # give terminal back to the shell
+            _clear_dead_jobs()
+            print('=== 0.4')
             return
         pgrp = active_task.get('pgrp', None)
         obj = active_task['obj']
@@ -191,6 +248,7 @@ else:
         else:
             obj.returncode = os.WEXITSTATUS(wcode)
             obj.signal = None
+        print('=== [jobs] about to enter wait_for_active_job() again..')
         return wait_for_active_job()
 
 
@@ -252,6 +310,7 @@ def get_next_job_number():
 
 def add_job(info):
     """Add a new job to the jobs dictionary."""
+    print('=== enter add_job ...')
     num = get_next_job_number()
     info['started'] = time.time()
     info['status'] = "running"
@@ -277,11 +336,13 @@ def clean_jobs():
         if builtins.__xonsh_all_jobs__:
             global _last_exit_time
             hist = builtins.__xonsh_history__
-            if hist is not None and hist.buffer:
-                last_cmd_start = builtins.__xonsh_history__.buffer[-1]['ts'][0]
+            if hist is not None and len(hist.tss) > 0:
+                last_cmd_start = hist.tss[-1][0]
             else:
                 last_cmd_start = None
 
+            print('_last_exit_time: {}'.format(_last_exit_time))
+            print('last_cmd_start: {}'.format(last_cmd_start))
             if (_last_exit_time and last_cmd_start and
                     _last_exit_time > last_cmd_start):
                 # Exit occurred after last command started, so it was called as
@@ -317,6 +378,7 @@ def kill_all_jobs():
     """
     Send SIGKILL to all child processes (called when exiting xonsh).
     """
+    print('=== enter kill_all_jobs() ...')
     _clear_dead_jobs()
     for job in builtins.__xonsh_all_jobs__.values():
         _kill(job)

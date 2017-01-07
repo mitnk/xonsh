@@ -14,6 +14,7 @@ import sys
 import time
 import queue
 import array
+import psutil
 import ctypes
 import signal
 import inspect
@@ -336,7 +337,7 @@ def populate_console(reader, fd, buffer, chunksize, queue, expandsize=None):
     # I believe that there is a bug in PTK that if we reset the
     # cursor position, the cursor on the next prompt is accidentally on
     # the next line.  If this is fixed, uncomment the following line.
-    #if max_offset < offset + expandsize:
+    # if max_offset < offset + expandsize:
     #    rows, max_offset, orig_posize = _expand_console_buffer(
     #                                        cols, max_offset, expandsize,
     #                                        orig_posize, fd)
@@ -1718,6 +1719,7 @@ class CommandPipeline:
         """Iterates through the last stdout, and returns the lines
         exactly as found.
         """
+        print('=== enter iterraw() ...')
         # get approriate handles
         spec = self.spec
         proc = self.proc
@@ -1734,9 +1736,16 @@ class CommandPipeline:
         if not stdout or not safe_readable(stdout):
             # we get here if the process is not threadable or the
             # class is the real Popen
+            p_ = psutil.Process(proc.pid)
+            print('=== proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
             PrevProcCloser(pipeline=self)
+            print('=== [proc][iterraw] calling wait_for_active_job()')
             wait_for_active_job()
+            print('=== yoo wait_for_active_job() done and proc.wait() ')
+            print('=== proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
             proc.wait()
+            print('=== proc.wait() done')
+            print('=== proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
             self._endtime()
             if self.captured == 'object':
                 self.end(tee_output=False)
@@ -1809,6 +1818,7 @@ class CommandPipeline:
         self.stream_stderr(safe_readlines(stderr))
         if self.captured == 'object':
             self.end(tee_output=False)
+        print('=== leave iterraw() ...')
 
     def itercheck(self):
         """Iterates through the command lines and throws an error if the
@@ -1825,6 +1835,7 @@ class CommandPipeline:
         """Writes the process stdout to the output variable, line-by-line, and
         yields each line.
         """
+        print('=== enter tee_stdout() ...')
         env = builtins.__xonsh_env__
         enc = env.get('XONSH_ENCODING')
         err = env.get('XONSH_ENCODING_ERRORS')
@@ -1908,12 +1919,17 @@ class CommandPipeline:
         """Waits for the command to complete and then runs any closing and
         cleanup procedures that need to be run.
         """
+        print('=== calling command.end()')
+        for p in self.procs:
+            p_ = psutil.Process(p.pid)
+            print(' - p: [{}] {} {}'.format(p.pid, p.args, p_.status()))
         if self.ended:
             return
         if tee_output:
             for _ in self.tee_stdout():
                 pass
         self._endtime()
+        print('=== after call _endtime() ...')
         # since we are driven by getting output, input may not be available
         # until the command has completed.
         self._set_input()

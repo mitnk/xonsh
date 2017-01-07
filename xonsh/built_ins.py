@@ -413,6 +413,7 @@ class SubprocSpec:
         # args
         self.cmd = list(cmd)
         self.cls = cls
+        print('cmd: {} cls: {}'.format(self.cmd, cls))
         self.stdin = stdin
         self.stdout = stdout
         self.stderr = stderr
@@ -671,6 +672,7 @@ def _update_last_spec(last):
     else:
         thable = builtins.__xonsh_commands_cache__.predict_threadable(last.args)
         if captured and thable:
+            print('=== changing {} to PopenThread'.format(last))
             last.cls = PopenThread
         elif not thable:
             # foreground processes should use Popen and not pipe stdout, stderr
@@ -774,17 +776,33 @@ def run_subproc(cmds, captured=False):
 
     Lastly, the captured argument affects only the last real command.
     """
+    import psutil
+    print('=== enter run_subproc() cmds: {} captured: {}'.format(cmds, captured))
     specs = cmds_to_specs(cmds, captured=captured)
     captured = specs[-1].captured
     procs = []
     proc = pipeline_group = None
+    print('=== specs:')
+    for s in specs:
+        print('  - spec: {}'.format(s))
     for spec in specs:
         starttime = time.time()
+        print('run spec: {}'.format(spec.cmd))
         proc = spec.run(pipeline_group=pipeline_group)
+        print('run spec done: {}'.format(spec.cmd))
         procs.append(proc)
         if ON_POSIX and pipeline_group is None and \
            spec.cls is subprocess.Popen:
             pipeline_group = proc.pid
+    print('=== procs:')
+    for p in procs:
+        if isinstance(p, PopenThread):
+            p_ = psutil.Process(p.proc.pid)
+            print('  - proc {}: {} status: {}'.format(p, p.proc.args, p_.status()))
+        else:
+            p_ = psutil.Process(p.pid)
+            print('  - proc {}: {} status: {}'.format(p, p.args, p_.status()))
+    print('=== spec.is_proxy: {}'.format(spec.is_proxy))
     if not spec.is_proxy:
         add_job({
             'cmds': cmds,
@@ -796,6 +814,7 @@ def run_subproc(cmds, captured=False):
         # set title here to get currently executing command
         pause_call_resume(proc, builtins.__xonsh_shell__.settitle)
     # create command or return if backgrounding.
+    print('=== spec.background: {}'.format(spec.background))
     if spec.background:
         return
     if captured == 'hiddenobject':
@@ -805,6 +824,8 @@ def run_subproc(cmds, captured=False):
         command = CommandPipeline(specs, procs, starttime=starttime,
                                   captured=captured)
     # now figure out what we should return.
+    print('=== command: {} at {}'.format(command.__class__, id(command)))
+    print('=== now figure out what we should return')
     if captured == 'stdout':
         command.end()
         return command.output
