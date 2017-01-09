@@ -4,6 +4,7 @@
 Note that this module is named 'built_ins' so as not to be confused with the
 special Python builtins module.
 """
+import mlog
 import io
 import os
 import re
@@ -413,7 +414,7 @@ class SubprocSpec:
         # args
         self.cmd = list(cmd)
         self.cls = cls
-        print('cmd: {} cls: {}'.format(self.cmd, cls))
+        mlog.xl('bi - SubprocSpec - cmd: {} cls: {}'.format(self.cmd, cls))
         self.stdin = stdin
         self.stdout = stdout
         self.stderr = stderr
@@ -506,8 +507,10 @@ class SubprocSpec:
         self.prep_env(kwargs)
         self.prep_preexec_fn(kwargs, pipeline_group=pipeline_group)
         if callable(self.alias):
+            mlog.xl('bi - [{}] self.cls in: {} out: {}'.format(self.cmd, kwargs['stdin'], kwargs['stdout']))
             p = self.cls(self.alias, self.cmd, **kwargs)
         else:
+            mlog.xl('bi - [{}] _run_binary - in: {} out: {}'.format(self.cmd, kwargs['stdin'], kwargs['stdout']))
             p = self._run_binary(kwargs)
         p.spec = self
         p.last_in_pipeline = self.last_in_pipeline
@@ -672,7 +675,7 @@ def _update_last_spec(last):
     else:
         thable = builtins.__xonsh_commands_cache__.predict_threadable(last.args)
         if captured and thable:
-            print('=== changing {} to PopenThread'.format(last))
+            mlog.xl('bi - changing {} to PopenThread'.format(last))
             last.cls = PopenThread
         elif not thable:
             # foreground processes should use Popen and not pipe stdout, stderr
@@ -777,32 +780,39 @@ def run_subproc(cmds, captured=False):
     Lastly, the captured argument affects only the last real command.
     """
     import psutil
-    print('=== enter run_subproc() cmds: {} captured: {}'.format(cmds, captured))
+    mlog.xl('bi - enter run_subproc() cmds: {} captured: {}'.format(cmds, captured))
     specs = cmds_to_specs(cmds, captured=captured)
     captured = specs[-1].captured
     procs = []
     proc = pipeline_group = None
-    print('=== specs:')
+    mlog.xl('bi - specs:')
     for s in specs:
-        print('  - spec: {}'.format(s))
+        mlog.xl('  - spec: {}'.format(s))
     for spec in specs:
         starttime = time.time()
-        print('run spec: {}'.format(spec.cmd))
+        mlog.xl('bi - run spec: {}'.format(spec.cmd))
         proc = spec.run(pipeline_group=pipeline_group)
-        print('run spec done: {}'.format(spec.cmd))
+        mlog.xl('bi - run spec done: {}'.format(spec.cmd))
+        mlog.xl('bi - proc built: [{}] {}'.format(proc.__class__.__name__, proc))
         procs.append(proc)
         if ON_POSIX and pipeline_group is None and \
            spec.cls is subprocess.Popen:
             pipeline_group = proc.pid
-    print('=== procs:')
+    mlog.xl('bi - procs:')
     for p in procs:
         if isinstance(p, PopenThread):
-            p_ = psutil.Process(p.proc.pid)
-            print('  - proc {}: {} status: {}'.format(p, p.proc.args, p_.status()))
+            try:
+                p_ = psutil.Process(p.proc.pid)
+                mlog.xl('  - proc {}: {} status: {}'.format(p, p.proc.args, p_.status()))
+            except Exception as e:
+                mlog.xl('proc - psutil error {}: {}'.format(e.__class__.__name__, e))
         else:
-            p_ = psutil.Process(p.pid)
-            print('  - proc {}: {} status: {}'.format(p, p.args, p_.status()))
-    print('=== spec.is_proxy: {}'.format(spec.is_proxy))
+            try:
+                p_ = psutil.Process(p.pid)
+                mlog.xl('  - proc {}: {} status: {}'.format(p, p.args, p_.status()))
+            except Exception as e:
+                mlog.xl('proc - psutil error {}: {}'.format(e.__class__.__name__, e))
+    mlog.xl('bi - spec.is_proxy: {}'.format(spec.is_proxy))
     if not spec.is_proxy:
         add_job({
             'cmds': cmds,
@@ -814,7 +824,7 @@ def run_subproc(cmds, captured=False):
         # set title here to get currently executing command
         pause_call_resume(proc, builtins.__xonsh_shell__.settitle)
     # create command or return if backgrounding.
-    print('=== spec.background: {}'.format(spec.background))
+    mlog.xl('bi - spec.background: {}'.format(spec.background))
     if spec.background:
         return
     if captured == 'hiddenobject':
@@ -824,8 +834,8 @@ def run_subproc(cmds, captured=False):
         command = CommandPipeline(specs, procs, starttime=starttime,
                                   captured=captured)
     # now figure out what we should return.
-    print('=== command: {} at {}'.format(command.__class__, id(command)))
-    print('=== now figure out what we should return')
+    mlog.xl('bi - command: {} at {}'.format(command.__class__, id(command)))
+    mlog.xl('bi - now figure out what we should return')
     if captured == 'stdout':
         command.end()
         return command.output

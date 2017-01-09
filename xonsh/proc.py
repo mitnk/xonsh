@@ -31,6 +31,7 @@ from xonsh.tools import (redirect_stdout, redirect_stderr, print_exception,
 from xonsh.lazyasd import lazyobject, LazyObject
 from xonsh.jobs import wait_for_active_job
 from xonsh.lazyimps import fcntl, termios, _winapi, msvcrt, winutils
+import mlog
 
 
 # termios tc(get|set)attr indexes.
@@ -1719,7 +1720,7 @@ class CommandPipeline:
         """Iterates through the last stdout, and returns the lines
         exactly as found.
         """
-        print('=== enter iterraw() ...')
+        mlog.xl('proc - enter iterraw() ...')
         # get approriate handles
         spec = self.spec
         proc = self.proc
@@ -1737,15 +1738,28 @@ class CommandPipeline:
             # we get here if the process is not threadable or the
             # class is the real Popen
             p_ = psutil.Process(proc.pid)
-            print('=== proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
+            mlog.xl('proc - proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
             PrevProcCloser(pipeline=self)
-            print('=== [proc][iterraw] calling wait_for_active_job()')
+            mlog.xl('proc - [proc][iterraw] calling wait_for_active_job()')
             wait_for_active_job()
-            print('=== yoo wait_for_active_job() done and proc.wait() ')
-            print('=== proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
+            mlog.xl('proc - proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
+            mlog.xl('proc - yoo wait_for_active_job() done and waiting proc.wait() ...')
+            pid_min = proc.pid - 1
+            try:
+                p__ = psutil.Process(pid_min)
+                mlog.xl('proc - proc: [{}] {}'.format(pid_min, p__.status()))
+            except Exception as e:
+                mlog.xl('proc - psutil error {}: {}'.format(e.__class__.__name__, e))
+            try:
+                mlog.xl('proc - proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
+            except Exception as e:
+                mlog.xl('error {}: {}'.format(e.__class__.__name__, e))
             proc.wait()
-            print('=== proc.wait() done')
-            print('=== proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
+            mlog.xl('proc - proc.wait() done')
+            try:
+                mlog.xl('proc - proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
+            except Exception as e:
+                mlog.xl('error {}: {}'.format(e.__class__.__name__, e))
             self._endtime()
             if self.captured == 'object':
                 self.end(tee_output=False)
@@ -1818,7 +1832,7 @@ class CommandPipeline:
         self.stream_stderr(safe_readlines(stderr))
         if self.captured == 'object':
             self.end(tee_output=False)
-        print('=== leave iterraw() ...')
+        mlog.xl('proc - leave iterraw() ...')
 
     def itercheck(self):
         """Iterates through the command lines and throws an error if the
@@ -1835,7 +1849,7 @@ class CommandPipeline:
         """Writes the process stdout to the output variable, line-by-line, and
         yields each line.
         """
-        print('=== enter tee_stdout() ...')
+        mlog.xl('proc - enter tee_stdout() ...')
         env = builtins.__xonsh_env__
         enc = env.get('XONSH_ENCODING')
         err = env.get('XONSH_ENCODING_ERRORS')
@@ -1919,17 +1933,20 @@ class CommandPipeline:
         """Waits for the command to complete and then runs any closing and
         cleanup procedures that need to be run.
         """
-        print('=== calling command.end()')
+        mlog.xl('proc - calling command.end()')
         for p in self.procs:
-            p_ = psutil.Process(p.pid)
-            print(' - p: [{}] {} {}'.format(p.pid, p.args, p_.status()))
+            try:
+                p_ = psutil.Process(p.pid)
+                mlog.xl('proc - p: [{}] {}'.format(p.pid, p_.status()))
+            except Exception as e:
+                mlog.xl('proc - psutil error {}: {}'.format(e.__class__.__name__, e))
         if self.ended:
             return
         if tee_output:
             for _ in self.tee_stdout():
                 pass
         self._endtime()
-        print('=== after call _endtime() ...')
+        mlog.xl('proc - after call _endtime() ...')
         # since we are driven by getting output, input may not be available
         # until the command has completed.
         self._set_input()

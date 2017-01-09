@@ -19,6 +19,7 @@ tasks = LazyObject(collections.deque, globals(), 'tasks')
 _last_exit_time = None
 
 import psutil
+import mlog
 
 
 def _print_job_info(job):
@@ -27,32 +28,32 @@ def _print_job_info(job):
         try:
             p = psutil.Process(job)
         except:
-            print('no process of {}'.format(job))
+            mlog.xl('jobs - no process of {}'.format(job))
         ps.append(p)
     else:
         for pid in job['pids']:
             try:
                 p = psutil.Process(pid)
             except:
-                print('no process of {}'.format(pid))
+                mlog.xl('jobs - no process of {}'.format(pid))
                 continue
             ps.append(p)
     for p in ps:
-        print('')
+        mlog.xl('')
         try:
-            print('[{}] {} - {}'.format(p.pid, p.cmdline(), p.status()))
+            mlog.xl('jobs - [{}] {} - {}'.format(p.pid, p.cmdline(), p.status()))
         except:
             try:
-                print('[{}] {}'.format(p.pid, p.status()))
+                mlog.xl('jobs - [{}] {}'.format(p.pid, p.status()))
             except:
-                print('[{}] not ready?'.format(p.pid))
+                mlog.xl('jobs - [{}] not ready?'.format(p.pid))
 
 
 if ON_DARWIN:
     def _send_signal(job, signal):
-        print('+' * 20)
+        mlog.xl('jobs - +' * 20)
         _print_job_info(job)
-        print('+' * 20)
+        mlog.xl('jobs - +' * 20)
 
         # if signal == signal.SIGCONT:
         #     for pid in job['pids']:
@@ -74,9 +75,9 @@ if ON_DARWIN:
                 continue
             try:
                 os.kill(pid, signal)
-                print('send {} SIG to pid {}'.format(signal, pid))
+                mlog.xl('jobs - send {} SIG to pid {}'.format(signal, pid))
             except Exception as e:
-                print('=== error {} with pid: {} signal: {}'.format(e, pid, signal))
+                mlog.xl('jobs - error {} with pid: {} signal: {}'.format(e, pid, signal))
 elif ON_WINDOWS:
     pass
 elif ON_CYGWIN:
@@ -141,12 +142,12 @@ if ON_WINDOWS:
 
 else:
     def _continue(job):
-        print('enter continue ----')
+        mlog.xl('jobs - enter continue ----')
         _send_signal(job, signal.SIGCONT)
-        print('leave continue ++++')
+        mlog.xl('jobs - leave continue ++++')
 
     def _kill(job):
-        print('_kill job: {}'.format(job['pids']))
+        mlog.xl('jobs - _kill job: {}'.format(job['pids']))
         _send_signal(job, signal.SIGKILL)
 
     def ignore_sigtstp():
@@ -220,16 +221,16 @@ else:
         Wait for the active job to finish, to be killed by SIGINT, or to be
         suspended by ctrl-z.
         """
-        print('=== [jobs] enter wait_for_active_job() ..')
-        print('=== 0')
+        mlog.xl('jobs - [jobs] enter wait_for_active_job() ..')
+        mlog.xl('jobs - 0')
         _clear_dead_jobs()
         active_task = get_next_task()
         # Return when there are no foreground active task
         if active_task is None:
-            print('=== 0.3')
+            mlog.xl('jobs - 0.3')
             _give_terminal_to(_shell_pgrp)  # give terminal back to the shell
             _clear_dead_jobs()
-            print('=== 0.4')
+            mlog.xl('jobs - 0.4')
             return
         pgrp = active_task.get('pgrp', None)
         obj = active_task['obj']
@@ -248,7 +249,7 @@ else:
         else:
             obj.returncode = os.WEXITSTATUS(wcode)
             obj.signal = None
-        print('=== [jobs] about to enter wait_for_active_job() again..')
+        mlog.xl('jobs - about to enter wait_for_active_job() again..')
         return wait_for_active_job()
 
 
@@ -310,7 +311,7 @@ def get_next_job_number():
 
 def add_job(info):
     """Add a new job to the jobs dictionary."""
-    print('=== enter add_job ...')
+    mlog.xl('jobs - enter add_job ...')
     num = get_next_job_number()
     info['started'] = time.time()
     info['status'] = "running"
@@ -341,8 +342,6 @@ def clean_jobs():
             else:
                 last_cmd_start = None
 
-            print('_last_exit_time: {}'.format(_last_exit_time))
-            print('last_cmd_start: {}'.format(last_cmd_start))
             if (_last_exit_time and last_cmd_start and
                     _last_exit_time > last_cmd_start):
                 # Exit occurred after last command started, so it was called as
@@ -378,7 +377,7 @@ def kill_all_jobs():
     """
     Send SIGKILL to all child processes (called when exiting xonsh).
     """
-    print('=== enter kill_all_jobs() ...')
+    mlog.xl('jobs - enter kill_all_jobs() ...')
     _clear_dead_jobs()
     for job in builtins.__xonsh_all_jobs__.values():
         _kill(job)
