@@ -1737,29 +1737,32 @@ class CommandPipeline:
         if not stdout or not safe_readable(stdout):
             # we get here if the process is not threadable or the
             # class is the real Popen
-            p_ = psutil.Process(proc.pid)
-            mlog.xl('proc - proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
-            PrevProcCloser(pipeline=self)
-            mlog.xl('proc - [proc][iterraw] calling wait_for_active_job()')
-            wait_for_active_job()
-            mlog.xl('proc - proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
-            mlog.xl('proc - yoo wait_for_active_job() done and waiting proc.wait() ...')
-            pid_min = proc.pid - 1
             try:
+                p_ = psutil.Process(proc.pid)
+                mlog.xl('proc - 0.1 proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
+                PrevProcCloser(pipeline=self)
+                mlog.xl('proc - 0.2 [proc][iterraw] calling wait_for_active_job()')
+                wait_for_active_job()
+                mlog.xl('proc - 0.3 proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
+                mlog.xl('proc - 0.4 yoo wait_for_active_job() done and waiting proc.wait() ...')
+            except Exception as e:
+                mlog.xl('proc - 1 - psutil error {}: {}'.format(e.__class__.__name__, e))
+            try:
+                pid_min = proc.pid - 1
                 p__ = psutil.Process(pid_min)
                 mlog.xl('proc - proc: [{}] {}'.format(pid_min, p__.status()))
             except Exception as e:
-                mlog.xl('proc - psutil error {}: {}'.format(e.__class__.__name__, e))
+                mlog.xl('proc - 2 - psutil error {}: {}'.format(e.__class__.__name__, e))
             try:
                 mlog.xl('proc - proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
             except Exception as e:
-                mlog.xl('error {}: {}'.format(e.__class__.__name__, e))
+                mlog.xl('proc - 3 - error {}: {}'.format(e.__class__.__name__, e))
             proc.wait()
             mlog.xl('proc - proc.wait() done')
             try:
                 mlog.xl('proc - proc: [{}] {} {}'.format(proc.pid, proc.args, p_.status()))
             except Exception as e:
-                mlog.xl('error {}: {}'.format(e.__class__.__name__, e))
+                mlog.xl('proc - 4 - error {}: {}'.format(e.__class__.__name__, e))
             self._endtime()
             if self.captured == 'object':
                 self.end(tee_output=False)
