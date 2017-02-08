@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Job control for the xonsh shell."""
+import mlog
 import os
 import sys
 import time
@@ -28,7 +29,10 @@ if ON_DARWIN:
         for pid in job['pids']:
             if pid is None:  # the pid of an aliased proc is None
                 continue
-            os.kill(pid, signal)
+            try:
+                os.kill(pid, signal)
+            except ProcessLookupError:
+                pass
 elif ON_WINDOWS:
     pass
 elif ON_CYGWIN:
@@ -159,17 +163,31 @@ else:
                 oldmask = signal.pthread_sigmask(signal.SIG_BLOCK,
                                                  _block_when_giving)
                 os.tcsetpgrp(st, pgid)
+                mlog.log('jobs 165 - gave terminal to {}'.format(pgid))
                 signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
+            else:
+                if st is None:
+                    mlog.log('cannot give term to sh:{} because st:{}'.format(pgid, st))
+                    oldmask = signal.pthread_sigmask(signal.SIG_BLOCK,
+                                                     _block_when_giving)
+                    ok = os.tcsetpgrp(2, pgid)
+                    signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
+                    mlog.log('jobs 171 - gave terminal to {} ok:{}'.format(pgid, ok))
+                else:
+                    mlog.log('cannot give term because st:{} os.isatty:{}'.format(st, os.isatty(st)))
 
     def wait_for_active_job(last_task=None, backgrounded=False):
         """
         Wait for the active job to finish, to be killed by SIGINT, or to be
         suspended by ctrl-z.
         """
+        mlog.log('jobs 184 - enter wait_for_active_job()')
         _clear_dead_jobs()
         active_task = get_next_task()
+        mlog.log('jobs 174 - active_task: {}'.format(active_task))
         # Return when there are no foreground active task
         if active_task is None:
+            mlog.log('jobs 177 - try give terminal to xonsh')
             _give_terminal_to(_shell_pgrp)  # give terminal back to the shell
             if backgrounded and hasattr(builtins, '__xonsh_shell__'):
                 # restoring sanity could probably be called whenever we return
@@ -185,6 +203,7 @@ else:
         if pgrp is not None:
             _give_terminal_to(pgrp)
         _continue(active_task)
+        mlog.log('jobs 192 - waiting pid: {}'.format(obj.pid))
         _, wcode = os.waitpid(obj.pid, os.WUNTRACED)
         if os.WIFSTOPPED(wcode):
             print('^Z')
@@ -196,6 +215,7 @@ else:
             obj.returncode = None
         else:
             obj.returncode = os.WEXITSTATUS(wcode)
+            mlog.log('jobs 204 - pid {} finished with {} {}'.format(obj.pid, wcode, obj.returncode))
             obj.signal = None
         return wait_for_active_job(last_task=active_task,
                                    backgrounded=backgrounded)

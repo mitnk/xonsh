@@ -4,6 +4,7 @@
 Note that this module is named 'built_ins' so as not to be confused with the
 special Python builtins module.
 """
+import mlog
 import io
 import os
 import re
@@ -541,6 +542,7 @@ class SubprocSpec:
             def xonsh_preexec_fn():
                 """Preexec function bound to a pipeline group."""
                 os.setpgid(0, pipeline_group)
+                mlog.log('bi 545 - set gid to {}'.format(pipeline_group))
                 signal.signal(signal.SIGTSTP, default_signal_pauser)
         kwargs['preexec_fn'] = xonsh_preexec_fn
 
@@ -677,6 +679,7 @@ def _update_last_spec(last):
         thable = builtins.__xonsh_commands_cache__.predict_threadable(last.args)
         if captured and thable:
             last.cls = PopenThread
+            mlog.log('bi 681 - set last.cls to PopenThread')
         elif not thable:
             # foreground processes should use Popen and not pipe stdout, stderr
             last.threadable = False
@@ -748,6 +751,7 @@ def cmds_to_specs(cmds, captured=False):
                 cmd = cmd[:-1]
                 redirects.append('&')
             spec = SubprocSpec.build(cmd, captured=captured)
+            mlog.log('bi 752 - spec built. cmd:{} spec kls:{}'.format(cmd, spec.__class__.__name__))
             specs.append(spec)
     # now modify the subprocs based on the redirects.
     for i, redirect in enumerate(redirects):
@@ -787,6 +791,7 @@ def run_subproc(cmds, captured=False):
 
     Lastly, the captured argument affects only the last real command.
     """
+    mlog.log('bi 791 - run subproc: {}'.format(cmds))
     specs = cmds_to_specs(cmds, captured=captured)
     captured = specs[-1].captured
     procs = []
@@ -794,10 +799,17 @@ def run_subproc(cmds, captured=False):
     for spec in specs:
         starttime = time.time()
         proc = spec.run(pipeline_group=pipeline_group)
+        mlog.log('bi 800 - proc built. {} [{}][{}]'.format(proc.__class__.__name__, spec.cls, spec.cmd))
         procs.append(proc)
         if ON_POSIX and pipeline_group is None and \
            spec.cls is subprocess.Popen:
             pipeline_group = proc.pid
+            try:
+                gid = os.getpgid(proc.pid)
+                os.tcsetpgrp(2, gid)
+                mlog.log('bi 805 - tcsetpgrp to {} {}'.format(proc.pid, gid))
+            except Exception as e:
+                mlog.log('bi 806 - {}: {}'.format(e.__class__.__name__, e))
     if not spec.is_proxy:
         add_job({
             'cmds': cmds,
