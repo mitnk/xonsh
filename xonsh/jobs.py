@@ -106,6 +106,7 @@ else:
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
 
     def _set_pgrp(info):
+        mlog.log('jobs 109 - setting job pgrp for {}'.format(info))
         pid = info['pids'][0]
         if pid is None:
             # occurs if first process is an alias
@@ -113,11 +114,12 @@ else:
             return
         try:
             info['pgrp'] = os.getpgid(pid)
+            mlog.log('jobs 109 - set to {}'.format(info['pgrp']))
         except ProcessLookupError:
             info['pgrp'] = None
+            mlog.log('jobs 109 - set to None ProcessLookupError')
 
     _shell_pgrp = os.getpgrp()
-
     _block_when_giving = LazyObject(lambda: (signal.SIGTTOU, signal.SIGTTIN,
                                              signal.SIGTSTP, signal.SIGCHLD),
                                     globals(), '_block_when_giving')
@@ -167,12 +169,16 @@ else:
                 signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
             else:
                 if st is None:
-                    mlog.log('cannot give term to sh:{} because st:{}'.format(pgid, st))
-                    oldmask = signal.pthread_sigmask(signal.SIG_BLOCK,
-                                                     _block_when_giving)
-                    ok = os.tcsetpgrp(2, pgid)
-                    signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
-                    mlog.log('jobs 171 - gave terminal to {} ok:{}'.format(pgid, ok))
+                    if os.isatty(2):
+                        try:
+                            mlog.log('jobs 172 - cannot give terminal to {} because st:{}'.format(pgid, st))
+                            oldmask = signal.pthread_sigmask(signal.SIG_BLOCK,
+                                                             _block_when_giving)
+                            ok = os.tcsetpgrp(2, pgid)
+                            signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
+                            mlog.log('jobs 171 - gave terminal to {} ok:{}'.format(pgid, ok))
+                        except Exception as e:
+                            mlog.log('job 181 - {}: {}'.format(e.__class__.__name__, e))
                 else:
                     mlog.log('cannot give term because st:{} os.isatty:{}'.format(st, os.isatty(st)))
 
@@ -201,9 +207,10 @@ else:
         backgrounded = False
         # give the terminal over to the fg process
         if pgrp is not None:
+            mlog.log('jobs 206 - try give terminal to pgrp: {}'.format(pgrp))
             _give_terminal_to(pgrp)
         _continue(active_task)
-        mlog.log('jobs 192 - waiting pid: {}'.format(obj.pid))
+        mlog.log('jobs 213 - waiting pid: {}'.format(obj.pid))
         _, wcode = os.waitpid(obj.pid, os.WUNTRACED)
         if os.WIFSTOPPED(wcode):
             print('^Z')
@@ -282,7 +289,7 @@ def add_job(info):
     num = get_next_job_number()
     info['started'] = time.time()
     info['status'] = "running"
-    _set_pgrp(info)
+    # _set_pgrp(info)
     tasks.appendleft(num)
     builtins.__xonsh_all_jobs__[num] = info
     if info['bg']:

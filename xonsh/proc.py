@@ -7,6 +7,7 @@ The contents of `subprocess.py` (and, thus, the reproduced methods) are
 Copyright (c) 2003-2005 by Peter Astrand <astrand@lysator.liu.se> and were
 licensed to the Python Software foundation under a Contributor Agreement.
 """
+import mlog
 import io
 import os
 import re
@@ -1713,6 +1714,7 @@ class CommandPipeline:
         """
         # get approriate handles
         spec = self.spec
+        mlog.log('proc 1715 - enter iterraw {}'.format(spec))
         proc = self.proc
         timeout = builtins.__xonsh_env__.get('XONSH_PROC_FREQUENCY')
         # get the correct stdout
@@ -1819,6 +1821,7 @@ class CommandPipeline:
         """Writes the process stdout to the output variable, line-by-line, and
         yields each line.
         """
+        mlog.log('proc 1824 - enter tee_stdout()')
         env = builtins.__xonsh_env__
         enc = env.get('XONSH_ENCODING')
         err = env.get('XONSH_ENCODING_ERRORS')
@@ -1902,6 +1905,7 @@ class CommandPipeline:
         """Waits for the command to complete and then runs any closing and
         cleanup procedures that need to be run.
         """
+        mlog.log('proc 1906 - enter {} end()'.format(self.__class__.__name__))
         if self.ended:
             return
         if tee_output:

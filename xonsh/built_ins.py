@@ -347,6 +347,7 @@ def no_pg_xonsh_preexec_fn():
     pipeline group.
     """
     os.setpgrp()
+    mlog.log('bi 350 - set gid to pid')
     signal.signal(signal.SIGTSTP, default_signal_pauser)
 
 
@@ -509,6 +510,7 @@ class SubprocSpec:
     def _run_binary(self, kwargs):
         try:
             bufsize = 1
+            mlog.log('bi 512 - in _run_binary {} init class: {}'.format(self.cmd, self.cls.__name__))
             p = self.cls(self.cmd, bufsize=bufsize, **kwargs)
         except PermissionError:
             e = 'xonsh: subprocess mode: permission denied: {0}'
@@ -535,6 +537,10 @@ class SubprocSpec:
     def prep_preexec_fn(self, kwargs, pipeline_group=None):
         """Prepares the 'preexec_fn' keyword argument"""
         if not (ON_POSIX and self.cls is subprocess.Popen):
+            return
+        env = builtins.__xonsh_env__
+        mlog.log('XONSH_INTERACTIVE: {}'.format(env['XONSH_INTERACTIVE']))
+        if not env['XONSH_INTERACTIVE']:
             return
         if pipeline_group is None:
             xonsh_preexec_fn = no_pg_xonsh_preexec_fn
@@ -778,6 +784,25 @@ def _should_set_title(captured=False):
             hasattr(builtins, '__xonsh_shell__'))
 
 
+def _should_give_terminal(specs):
+    try:
+        i = 0
+        while i < 100:
+            i += 1
+            if os.tcgetpgrp(2) == os.getpgid(0):
+                break
+            time.sleep(0.001)
+        if os.tcgetpgrp(2) != os.getpgid(0):
+            mlog.log('bi 790 - not own termial')
+            return False
+        if specs[-1].cls == PopenThread:
+            return False
+        return True
+    except Exception as e:
+        mlog.log('bi 797 error {}: {}'.format(e.__class__.__name__, e))
+        return False
+
+
 def run_subproc(cmds, captured=False):
     """Runs a subprocess, in its many forms. This takes a list of 'commands,'
     which may be a list of command line arguments or a string, representing
@@ -799,22 +824,30 @@ def run_subproc(cmds, captured=False):
     for spec in specs:
         starttime = time.time()
         proc = spec.run(pipeline_group=pipeline_group)
-        mlog.log('bi 800 - proc built. {} [{}][{}]'.format(proc.__class__.__name__, spec.cls, spec.cmd))
+        mlog.log('bi 809 - proc built [{}] {} {}'.format(proc.pid, proc.__class__.__name__, spec.cmd))
         procs.append(proc)
         if ON_POSIX and pipeline_group is None and \
            spec.cls is subprocess.Popen:
             pipeline_group = proc.pid
-            try:
-                gid = os.getpgid(proc.pid)
-                os.tcsetpgrp(2, gid)
-                mlog.log('bi 805 - tcsetpgrp to {} {}'.format(proc.pid, gid))
-            except Exception as e:
-                mlog.log('bi 806 - {}: {}'.format(e.__class__.__name__, e))
+
+            if _should_give_terminal(specs):
+                try:
+                    gid = os.getpgid(proc.pid)
+                    os.tcsetpgrp(2, gid)
+                    mlog.log('bi 819 - tcsetpgrp to {} {}'.format(proc.pid, gid))
+                except Exception as e:
+                    mlog.log('bi 821 - {}: {}'.format(e.__class__.__name__, e))
+            else:
+                pipeline_group = None
+                mlog.log('bi 823 - should not give termial')
+
+    mlog.log('bi 825 - {} spec.is_proxy: {}'.format(spec.cmd, spec.is_proxy))
     if not spec.is_proxy:
         add_job({
             'cmds': cmds,
             'pids': [i.pid for i in procs],
             'obj': proc,
+            'pgrp': pipeline_group,
             'bg': spec.background,
         })
     if _should_set_title(captured=captured):
@@ -830,6 +863,7 @@ def run_subproc(cmds, captured=False):
         command = CommandPipeline(specs, procs, starttime=starttime,
                                   captured=captured)
     # now figure out what we should return.
+    mlog.log('bi 833 - {} captured: {}'.format(command.__class__.__name__, captured))
     if captured == 'stdout':
         command.end()
         return command.output
