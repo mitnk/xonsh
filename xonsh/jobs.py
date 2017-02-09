@@ -211,15 +211,23 @@ else:
             _give_terminal_to(pgrp)
         _continue(active_task)
         mlog.log('jobs 213 - waiting pid: {}'.format(obj.pid))
-        _, wcode = os.waitpid(obj.pid, os.WUNTRACED)
+        try:
+            _, wcode = os.waitpid(obj.pid, os.WUNTRACED)
+        except ChildProcessError:
+            mlog.log('ChildProcessError for waiting pid {}'.format(obj.pid))
+            return wait_for_active_job(last_task=active_task,
+                                       backgrounded=backgrounded)
         if os.WIFSTOPPED(wcode):
             print('^Z')
             active_task['status'] = "stopped"
             backgrounded = True
         elif os.WIFSIGNALED(wcode):
             print()  # get a newline because ^C will have been printed
-            obj.signal = (os.WTERMSIG(wcode), os.WCOREDUMP(wcode))
-            obj.returncode = None
+            try:
+                obj.signal = (os.WTERMSIG(wcode), os.WCOREDUMP(wcode))
+                obj.returncode = None
+            except AttributeError:
+                mlog.log('obj {}: {}'.format(obj.__class__.__name__, obj))
         else:
             obj.returncode = os.WEXITSTATUS(wcode)
             mlog.log('jobs 204 - pid {} finished with {} {}'.format(obj.pid, wcode, obj.returncode))

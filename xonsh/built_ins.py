@@ -683,6 +683,9 @@ def _update_last_spec(last):
         pass
     else:
         thable = builtins.__xonsh_commands_cache__.predict_threadable(last.args)
+        if 'tail' in last.args:
+            last.threadable = False
+            return
         if captured and thable:
             last.cls = PopenThread
             mlog.log('bi 681 - set last.cls to PopenThread')
@@ -830,13 +833,16 @@ def run_subproc(cmds, captured=False):
            spec.cls is subprocess.Popen:
             pipeline_group = proc.pid
 
-            if _should_give_terminal(specs):
+            if spec.background:
+                pipeline_group = None
+                mlog.log('bi 838 spec {} is background, not giving termial'.format(spec.cmd))
+            elif _should_give_terminal(specs):
                 try:
                     gid = os.getpgid(proc.pid)
                     os.tcsetpgrp(2, gid)
-                    mlog.log('bi 819 - tcsetpgrp to {} {}'.format(proc.pid, gid))
+                    mlog.log('bi 843 - tcsetpgrp to {} {}'.format(proc.pid, gid))
                 except Exception as e:
-                    mlog.log('bi 821 - {}: {}'.format(e.__class__.__name__, e))
+                    mlog.log('bi 845 - {}: {}'.format(e.__class__.__name__, e))
             else:
                 pipeline_group = None
                 mlog.log('bi 823 - should not give termial')
@@ -855,6 +861,7 @@ def run_subproc(cmds, captured=False):
         pause_call_resume(proc, builtins.__xonsh_shell__.settitle)
     # create command or return if backgrounding.
     if spec.background:
+        mlog.log('bi 861 - spec is background')
         return
     if captured == 'hiddenobject':
         command = HiddenCommandPipeline(specs, procs, starttime=starttime,
