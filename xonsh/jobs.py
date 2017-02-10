@@ -179,6 +179,7 @@ else:
         mlog.log('jobs 190 - enter wait_for_active_job()')
         _clear_dead_jobs()
         active_task = get_next_task()
+        mlog.log('jobs 182 - active_task: {}'.format(active_task))
         # Return when there are no foreground active task
         if active_task is None:
             if backgrounded and hasattr(builtins, '__xonsh_shell__'):
@@ -190,7 +191,6 @@ else:
             return last_task
         obj = active_task['obj']
         backgrounded = False
-        _continue(active_task)
         mlog.log('jobs 208 - waiting pid {}'.format(obj.pid))
         try:
             _, wcode = os.waitpid(obj.pid, os.WUNTRACED)
@@ -365,31 +365,33 @@ def fg(args, stdin=None):
         return '', 'Cannot bring nonexistent job to foreground.\n'
 
     if len(args) == 0:
-        act = tasks[0]  # take the last manipulated task by default
+        tid = tasks[0]  # take the last manipulated task by default
     elif len(args) == 1:
         try:
             if args[0] == '+':  # take the last manipulated task
-                act = tasks[0]
+                tid = tasks[0]
             elif args[0] == '-':  # take the second to last manipulated task
-                act = tasks[1]
+                tid = tasks[1]
             else:
-                act = int(args[0])
+                tid = int(args[0])
         except (ValueError, IndexError):
             return '', 'Invalid job: {}\n'.format(args[0])
 
-        if act not in builtins.__xonsh_all_jobs__:
+        if tid not in builtins.__xonsh_all_jobs__:
             return '', 'Invalid job: {}\n'.format(args[0])
     else:
         return '', 'fg expects 0 or 1 arguments, not {}\n'.format(len(args))
 
     # Put this one on top of the queue
-    tasks.remove(act)
-    tasks.appendleft(act)
+    tasks.remove(tid)
+    tasks.appendleft(tid)
 
-    job = get_task(act)
+    job = get_task(tid)
+    mlog.log('jobs 390 - job: {}'.format(job))
     job['bg'] = False
     job['status'] = "running"
-    print_one_job(act)
+    print_one_job(tid)
+    mlog.log('jobs 395 - about to goin wait_for_active_job()')
     wait_for_active_job()
 
 

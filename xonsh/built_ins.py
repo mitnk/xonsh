@@ -497,7 +497,10 @@ class SubprocSpec:
         self.prep_env(kwargs)
         self.prep_preexec_fn(kwargs, pipeline_group=pipeline_group)
         if callable(self.alias):
-            mlog.log('bi 500 - run alias. cls: {}'.format(self.cls.__name__))
+            import inspect
+            mlog.log('bi 500 - run alias. cls: {} {}.{}'.format(
+                self.cls.__name__, inspect.getmodule(self.alias).__name__,
+                self.alias.__name__))
             if 'preexec_fn' in kwargs:
                 kwargs.pop('preexec_fn')
             p = self.cls(self.alias, self.cmd, **kwargs)
@@ -790,13 +793,15 @@ _block_when_giving = LazyObject(lambda: (signal.SIGTTOU, signal.SIGTTIN,
                                 globals(), '_block_when_giving')
 
 
-def update_fg_process_group(pipeline_group):
+def update_fg_process_group(pipeline_group, background):
+    if background:
+        return False
     if not ON_POSIX:
-        return
+        return False
     env = builtins.__xonsh_env__
     if not env.get('XONSH_INTERACTIVE'):
-        return
-    give_terminal_to(pipeline_group)
+        return False
+    return give_terminal_to(pipeline_group)
 
 
 def run_subproc(cmds, captured=False):
@@ -814,35 +819,38 @@ def run_subproc(cmds, captured=False):
     """
     specs = cmds_to_specs(cmds, captured=captured)
     captured = specs[-1].captured
+    background = specs[-1].background
     procs = []
     proc = pipeline_group = None
+    term_pgid = None
     for spec in specs:
         starttime = time.time()
         proc = spec.run(pipeline_group=pipeline_group)
-        mlog.log('bi 821 - spec run {} {}'.format(spec.cmd, spec.cls.__name__))
+        mlog.log('bi 829 - spec run {} {}'.format(spec.cmd, spec.cls.__name__))
         if captured != 'object' and proc.pid and pipeline_group is None:
             pipeline_group = proc.pid
-            update_fg_process_group(pipeline_group)
+            if update_fg_process_group(pipeline_group, background):
+                term_pgid = pipeline_group
         procs.append(proc)
     if not all(x.is_proxy for x in specs):
         add_job({
             'cmds': cmds,
             'pids': [i.pid for i in procs],
             'obj': proc,
-            'bg': spec.background,
+            'bg': background,
         })
     if _should_set_title(captured=captured):
         # set title here to get currently executing command
         pause_call_resume(proc, builtins.__xonsh_shell__.settitle)
     # create command or return if backgrounding.
-    if spec.background:
+    if background:
         return
     if captured == 'hiddenobject':
         command = HiddenCommandPipeline(specs, procs, starttime=starttime,
-                                        captured=captured)
+                                        captured=captured, term_pgid=term_pgid)
     else:
         command = CommandPipeline(specs, procs, starttime=starttime,
-                                  captured=captured)
+                                  captured=captured, term_pgid=term_pgid)
     # now figure out what we should return.
     if captured == 'stdout':
         command.end()

@@ -1655,7 +1655,8 @@ class CommandPipeline:
 
     nonblocking = (io.BytesIO, NonBlockingFDReader, ConsoleParallelReader)
 
-    def __init__(self, specs, procs, starttime=None, captured=False):
+    def __init__(self, specs, procs, starttime=None, captured=False,
+                 term_pgid=None):
         """
         Parameters
         ----------
@@ -1696,7 +1697,7 @@ class CommandPipeline:
         self._closed_handle_cache = {}
         self.lines = []
         self._stderr_prefix = self._stderr_postfix = None
-        self._term_pgid = None
+        self._term_pgid = term_pgid
 
     def __repr__(self):
         s = self.__class__.__name__ + '('
@@ -1941,7 +1942,7 @@ class CommandPipeline:
             return
         self.end_internal(tee_output=tee_output)
         pgid = os.getpgid(0)
-        if pgid == self._term_pgid:
+        if self._term_pgid is None or pgid == self._term_pgid:
             return
         mlog.log('proc 1946 - try gave term back to xonsh {}'.format(pgid))
         if give_terminal_to(pgid):  # if gave term succeed
