@@ -7,6 +7,7 @@ The contents of `subprocess.py` (and, thus, the reproduced methods) are
 Copyright (c) 2003-2005 by Peter Astrand <astrand@lysator.liu.se> and were
 licensed to the Python Software foundation under a Contributor Agreement.
 """
+import mlog
 import io
 import os
 import re
@@ -29,7 +30,7 @@ from xonsh.tools import (redirect_stdout, redirect_stderr, print_exception,
                          XonshCalledProcessError, findfirst, on_main_thread,
                          XonshError, format_std_prepost)
 from xonsh.lazyasd import lazyobject, LazyObject
-from xonsh.jobs import wait_for_active_job
+from xonsh.jobs import wait_for_active_job, give_terminal_to
 from xonsh.lazyimps import fcntl, termios, _winapi, msvcrt, winutils
 
 
@@ -1695,6 +1696,7 @@ class CommandPipeline:
         self._closed_handle_cache = {}
         self.lines = []
         self._stderr_prefix = self._stderr_postfix = None
+        self._term_pgid = None
 
     def __repr__(self):
         s = self.__class__.__name__ + '('
@@ -1833,6 +1835,7 @@ class CommandPipeline:
         """Writes the process stdout to the output variable, line-by-line, and
         yields each line.
         """
+        mlog.log('proc 1837 - enter tee_stdout()')
         env = builtins.__xonsh_env__
         enc = env.get('XONSH_ENCODING')
         err = env.get('XONSH_ENCODING_ERRORS')
@@ -1862,6 +1865,7 @@ class CommandPipeline:
             # tee it up!
             lines.append(line)
             yield line
+        mlog.log('proc 1867 - reach end of self.tee_stdout()')
 
     def stream_stderr(self, lines):
         """Streams lines to sys.stderr and the errors attribute."""
@@ -1912,15 +1916,15 @@ class CommandPipeline:
     # Ending methods
     #
 
-    def end(self, tee_output=True):
+    def end_internal(self, tee_output):
         """Waits for the command to complete and then runs any closing and
         cleanup procedures that need to be run.
         """
-        if self.ended:
-            return
+        mlog.log('proc 1920 - enter end() tee_output: {}'.format(tee_output))
         if tee_output:
             for _ in self.tee_stdout():
                 pass
+        mlog.log('proc 1927 - after self.tee_stdout()')
         self._endtime()
         # since we are driven by getting output, input may not be available
         # until the command has completed.
@@ -1931,6 +1935,17 @@ class CommandPipeline:
         self._apply_to_history()
         self.ended = True
         self._raise_subproc_error()
+
+    def end(self, tee_output=True):
+        if self.ended:
+            return
+        self.end_internal(tee_output=tee_output)
+        pgid = os.getpgid(0)
+        if pgid == self._term_pgid:
+            return
+        mlog.log('proc 1946 - try gave term back to xonsh {}'.format(pgid))
+        if give_terminal_to(pgid):  # if gave term succeed
+            self._term_pgid = pgid
 
     def _endtime(self):
         """Sets the closing timestamp if it hasn't been already."""

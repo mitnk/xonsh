@@ -4,6 +4,7 @@
 Note that this module is named 'built_ins' so as not to be confused with the
 special Python builtins module.
 """
+import mlog
 import io
 import os
 import re
@@ -27,7 +28,7 @@ from xonsh.inspectors import Inspector
 from xonsh.aliases import Aliases, make_default_aliases
 from xonsh.environ import Env, default_env, locate_binary
 from xonsh.foreign_shells import load_foreign_aliases
-from xonsh.jobs import add_job
+from xonsh.jobs import add_job, give_terminal_to
 from xonsh.platform import ON_POSIX, ON_WINDOWS
 from xonsh.proc import (
     PopenThread, ProcProxyThread, ProcProxy, ConsoleParallelReader,
@@ -496,6 +497,9 @@ class SubprocSpec:
         self.prep_env(kwargs)
         self.prep_preexec_fn(kwargs, pipeline_group=pipeline_group)
         if callable(self.alias):
+            mlog.log('bi 500 - run alias. cls: {}'.format(self.cls.__name__))
+            if 'preexec_fn' in kwargs:
+                kwargs.pop('preexec_fn')
             p = self.cls(self.alias, self.cmd, **kwargs)
         else:
             p = self._run_binary(kwargs)
@@ -533,7 +537,9 @@ class SubprocSpec:
 
     def prep_preexec_fn(self, kwargs, pipeline_group=None):
         """Prepares the 'preexec_fn' keyword argument"""
-        if not (ON_POSIX and self.cls is subprocess.Popen):
+        #if not (ON_POSIX and self.cls is subprocess.Popen):
+        #    return
+        if not ON_POSIX:
             return
         if not builtins.__xonsh_env__.get('XONSH_INTERACTIVE'):
             return
@@ -669,6 +675,7 @@ def _safe_pipe_properties(fd, use_tty=False):
 
 def _update_last_spec(last):
     captured = last.captured
+    mlog.log('bi 678 - last spec captured: {}'.format(captured))
     last.last_in_pipeline = True
     if not captured:
         return
@@ -778,6 +785,20 @@ def _should_set_title(captured=False):
             hasattr(builtins, '__xonsh_shell__'))
 
 
+_block_when_giving = LazyObject(lambda: (signal.SIGTTOU, signal.SIGTTIN,
+                                         signal.SIGTSTP, signal.SIGCHLD),
+                                globals(), '_block_when_giving')
+
+
+def update_fg_process_group(pipeline_group):
+    if not ON_POSIX:
+        return
+    env = builtins.__xonsh_env__
+    if not env.get('XONSH_INTERACTIVE'):
+        return
+    give_terminal_to(pipeline_group)
+
+
 def run_subproc(cmds, captured=False):
     """Runs a subprocess, in its many forms. This takes a list of 'commands,'
     which may be a list of command line arguments or a string, representing
@@ -798,11 +819,12 @@ def run_subproc(cmds, captured=False):
     for spec in specs:
         starttime = time.time()
         proc = spec.run(pipeline_group=pipeline_group)
-        procs.append(proc)
-        if ON_POSIX and pipeline_group is None and \
-           spec.cls is subprocess.Popen:
+        mlog.log('bi 821 - spec run {} {}'.format(spec.cmd, spec.cls.__name__))
+        if captured != 'object' and proc.pid and pipeline_group is None:
             pipeline_group = proc.pid
-    if not spec.is_proxy:
+            update_fg_process_group(pipeline_group)
+        procs.append(proc)
+    if not all(x.is_proxy for x in specs):
         add_job({
             'cmds': cmds,
             'pids': [i.pid for i in procs],

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Job control for the xonsh shell."""
+import mlog
 import os
 import sys
 import time
@@ -28,7 +29,10 @@ if ON_DARWIN:
         for pid in job['pids']:
             if pid is None:  # the pid of an aliased proc is None
                 continue
-            os.kill(pid, signal)
+            try:
+                os.kill(pid, signal)
+            except ProcessLookupError:
+                pass
 elif ON_WINDOWS:
     pass
 elif ON_CYGWIN:
@@ -102,15 +106,15 @@ else:
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
 
     def _set_pgrp(info):
-        pid = info['pids'][0]
-        if pid is None:
-            # occurs if first process is an alias
-            info['pgrp'] = None
-            return
-        try:
-            info['pgrp'] = os.getpgid(pid)
-        except ProcessLookupError:
-            info['pgrp'] = None
+        for pid in info['pids']:
+            if pid is None:  # occurs if first process is an alias
+                continue
+            try:
+                info['pgrp'] = os.getpgid(pid)
+                return
+            except ProcessLookupError:
+                continue
+        info['pgrp'] = None
 
     _shell_pgrp = os.getpgrp()
 
@@ -121,23 +125,23 @@ else:
     # check for shell tty
     @functools.lru_cache(1)
     def _shell_tty():
+        _st = None
         try:
-            _st = sys.stderr.fileno()
-            if os.tcgetpgrp(_st) != os.getpgid(os.getpid()):
+            if os.tcgetpgrp(sys.stderr.fileno()) != os.getpgid(0):
                 # we don't own it
                 _st = None
         except OSError:
             _st = None
         return _st
 
-    # _give_terminal_to is a simplified version of:
+    # give_terminal_to is a simplified version of:
     #    give_terminal_to from bash 4.3 source, jobs.c, line 4030
     # this will give the terminal to the process group pgid
     if ON_CYGWIN:
         # on cygwin, signal.pthread_sigmask does not exist in Python, even
         # though pthread_sigmask is defined in the kernel.  thus, we use
         # ctypes to mimic the calls in the "normal" version below.
-        def _give_terminal_to(pgid):
+        def give_terminal_to(pgid):
             st = _shell_tty()
             if st is not None and os.isatty(st):
                 omask = ctypes.c_ulong()
@@ -153,12 +157,18 @@ else:
                 LIBC.sigprocmask(ctypes.c_int(signal.SIG_SETMASK),
                                  ctypes.byref(omask), None)
     else:
-        def _give_terminal_to(pgid):
-            st = _shell_tty()
-            if st is not None and os.isatty(st):
-                oldmask = signal.pthread_sigmask(signal.SIG_BLOCK,
-                                                 _block_when_giving)
-                os.tcsetpgrp(st, pgid)
+        def give_terminal_to(pgid):
+            oldmask = signal.pthread_sigmask(signal.SIG_BLOCK, _block_when_giving)
+            try:
+                os.tcsetpgrp(sys.stderr.fileno(), pgid)
+                mlog.log('jobs 175 - gave term to {}'.format(pgid))
+                return True
+            except Exception as e:
+                mlog.log('tcsetpgrp error {}: {}'.format(e.__class__.__name__, e))
+                print('tcsetpgrp error {}: {}'.format(e.__class__.__name__, e),
+                      file=sys.stderr)
+                return False
+            finally:
                 signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
 
     def wait_for_active_job(last_task=None, backgrounded=False):
@@ -166,11 +176,11 @@ else:
         Wait for the active job to finish, to be killed by SIGINT, or to be
         suspended by ctrl-z.
         """
+        mlog.log('jobs 190 - enter wait_for_active_job()')
         _clear_dead_jobs()
         active_task = get_next_task()
         # Return when there are no foreground active task
         if active_task is None:
-            _give_terminal_to(_shell_pgrp)  # give terminal back to the shell
             if backgrounded and hasattr(builtins, '__xonsh_shell__'):
                 # restoring sanity could probably be called whenever we return
                 # control to the shell. But it only seems to matter after a
@@ -178,14 +188,15 @@ else:
                 # back to the shell.
                 builtins.__xonsh_shell__.shell.restore_tty_sanity()
             return last_task
-        pgrp = active_task.get('pgrp', None)
         obj = active_task['obj']
         backgrounded = False
-        # give the terminal over to the fg process
-        if pgrp is not None:
-            _give_terminal_to(pgrp)
         _continue(active_task)
-        _, wcode = os.waitpid(obj.pid, os.WUNTRACED)
+        mlog.log('jobs 208 - waiting pid {}'.format(obj.pid))
+        try:
+            _, wcode = os.waitpid(obj.pid, os.WUNTRACED)
+        except ChildProcessError:  # No child processes
+            return wait_for_active_job(last_task=active_task,
+                                       backgrounded=backgrounded)
         if os.WIFSTOPPED(wcode):
             print('^Z')
             active_task['status'] = "stopped"
@@ -307,9 +318,9 @@ def clean_jobs():
                     # newline
                     print()
                 print('xonsh: {}'.format(msg), file=sys.stderr)
-                print('-'*5, file=sys.stderr)
+                print('-' * 5, file=sys.stderr)
                 jobs([], stdout=sys.stderr)
-                print('-'*5, file=sys.stderr)
+                print('-' * 5, file=sys.stderr)
                 print('Type "exit" or press "ctrl-d" again to force quit.',
                       file=sys.stderr)
                 jobs_clean = False
