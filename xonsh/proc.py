@@ -1540,6 +1540,7 @@ class ProcProxy(object):
         """Runs the function and returns the result. Timeout argument only
         present for API compatability.
         """
+        mlog.log('proc 1543 - enter ProcProxy.wait()')
         if self.f is None:
             return 0
         env = builtins.__xonsh_env__
@@ -1836,6 +1837,8 @@ class CommandPipeline:
         """Writes the process stdout to the output variable, line-by-line, and
         yields each line.
         """
+        if self.spec.alias and hasattr(self.spec.alias, '__name__') and 'fg' in self.spec.alias.__name__:
+            import pdb; pdb.set_trace()
         mlog.log('proc 1837 - enter tee_stdout()')
         env = builtins.__xonsh_env__
         enc = env.get('XONSH_ENCODING')

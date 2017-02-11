@@ -498,9 +498,11 @@ class SubprocSpec:
         self.prep_preexec_fn(kwargs, pipeline_group=pipeline_group)
         if callable(self.alias):
             import inspect
-            mlog.log('bi 500 - run alias. cls: {} {}.{}'.format(
-                self.cls.__name__, inspect.getmodule(self.alias).__name__,
-                self.alias.__name__))
+            mlog.log('bi 501 - run alias. cls: {} {}.{}'.format(
+                self.cls.__name__,
+                inspect.getmodule(self.alias) and inspect.getmodule(self.alias).__name__,
+                self.alias.__name__,
+            ))
             if 'preexec_fn' in kwargs:
                 kwargs.pop('preexec_fn')
             p = self.cls(self.alias, self.cmd, **kwargs)
@@ -827,7 +829,8 @@ def run_subproc(cmds, captured=False):
         starttime = time.time()
         proc = spec.run(pipeline_group=pipeline_group)
         mlog.log('bi 829 - spec run {} {}'.format(spec.cmd, spec.cls.__name__))
-        if captured != 'object' and proc.pid and pipeline_group is None:
+        mlog.log('bi 830 - proc pid: {}'.format(getattr(proc, 'pid', 'nopid')))
+        if captured != 'object' and not spec.is_proxy and proc.pid and pipeline_group is None:
             pipeline_group = proc.pid
             if update_fg_process_group(pipeline_group, background):
                 term_pgid = pipeline_group

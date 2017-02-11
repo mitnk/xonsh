@@ -360,6 +360,7 @@ def fg(args, stdin=None):
     given as an argument, bring that job to the foreground. Additionally,
     specify "+" for the most recent job and "-" for the second most recent job.
     """
+    mlog.log('enter jobs.fg()')
     _clear_dead_jobs()
     if len(tasks) == 0:
         return '', 'Cannot bring nonexistent job to foreground.\n'
@@ -393,6 +394,7 @@ def fg(args, stdin=None):
     print_one_job(tid)
     mlog.log('jobs 395 - about to goin wait_for_active_job()')
     wait_for_active_job()
+fg.__xonsh_threadable__ = False
 
 
 def bg(args, stdin=None):
