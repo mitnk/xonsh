@@ -790,11 +790,6 @@ def _should_set_title(captured=False):
             hasattr(builtins, '__xonsh_shell__'))
 
 
-_block_when_giving = LazyObject(lambda: (signal.SIGTTOU, signal.SIGTTIN,
-                                         signal.SIGTSTP, signal.SIGCHLD),
-                                globals(), '_block_when_giving')
-
-
 def update_fg_process_group(pipeline_group, background):
     if background:
         return False
