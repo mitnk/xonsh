@@ -825,7 +825,8 @@ def run_subproc(cmds, captured=False):
         proc = spec.run(pipeline_group=pipeline_group)
         mlog.log('bi 829 - spec run {} {}'.format(spec.cmd, spec.cls.__name__))
         mlog.log('bi 830 - proc pid: {}'.format(getattr(proc, 'pid', 'nopid')))
-        if captured != 'object' and not spec.is_proxy and proc.pid and pipeline_group is None:
+        if proc.pid and pipeline_group is None and not spec.is_proxy and \
+                captured != 'object':
             pipeline_group = proc.pid
             if update_fg_process_group(pipeline_group, background):
                 term_pgid = pipeline_group
