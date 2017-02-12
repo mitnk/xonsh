@@ -171,7 +171,8 @@ else:
             finally:
                 signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
 
-    def wait_for_active_job(last_task=None, backgrounded=False):
+    def wait_for_active_job(last_task=None, backgrounded=False,
+                            make_fg=False):
         """
         Wait for the active job to finish, to be killed by SIGINT, or to be
         suspended by ctrl-z.
@@ -182,21 +183,26 @@ else:
         mlog.log('jobs 182 - active_task: {}'.format(active_task))
         # Return when there are no foreground active task
         if active_task is None:
-            if backgrounded and hasattr(builtins, '__xonsh_shell__'):
-                # restoring sanity could probably be called whenever we return
-                # control to the shell. But it only seems to matter after a
-                # ^Z event. This *has* to be called after we give the terminal
-                # back to the shell.
-                builtins.__xonsh_shell__.shell.restore_tty_sanity()
+            if make_fg:
+                pgid = os.getpgid(0)
+                give_terminal_to(pgid)
             return last_task
         obj = active_task['obj']
         backgrounded = False
+        if active_task.get('pgrp') and make_fg:
+            give_terminal_to(active_task['pgrp'])
+            for pid in active_task['pids']:
+                try:
+                    os.kill(pid, signal.SIGCONT)
+                except ProcessLookupError:
+                    pass
         mlog.log('jobs 208 - waiting pid {}'.format(obj.pid))
         try:
             _, wcode = os.waitpid(obj.pid, os.WUNTRACED)
         except ChildProcessError:  # No child processes
             return wait_for_active_job(last_task=active_task,
-                                       backgrounded=backgrounded)
+                                       backgrounded=backgrounded,
+                                       make_fg=make_fg)
         if os.WIFSTOPPED(wcode):
             print('^Z')
             active_task['status'] = "stopped"
@@ -209,7 +215,8 @@ else:
             obj.returncode = os.WEXITSTATUS(wcode)
             obj.signal = None
         return wait_for_active_job(last_task=active_task,
-                                   backgrounded=backgrounded)
+                                   backgrounded=backgrounded,
+                                   make_fg=make_fg)
 
 
 def get_next_task():
@@ -228,7 +235,10 @@ def get_next_task():
 
 
 def get_task(tid):
-    return builtins.__xonsh_all_jobs__[tid]
+    try:
+        return builtins.__xonsh_all_jobs__[tid]
+    except KeyError:
+        return None
 
 
 def _clear_dead_jobs():
@@ -360,7 +370,7 @@ def fg(args, stdin=None):
     given as an argument, bring that job to the foreground. Additionally,
     specify "+" for the most recent job and "-" for the second most recent job.
     """
-    mlog.log('enter jobs.fg()')
+    mlog.log('jobs 373 - enter jobs.fg()')
     _clear_dead_jobs()
     if len(tasks) == 0:
         return '', 'Cannot bring nonexistent job to foreground.\n'
@@ -388,12 +398,28 @@ def fg(args, stdin=None):
     tasks.appendleft(tid)
 
     job = get_task(tid)
+    if job is None:
+        return '', 'No such job\n'
     mlog.log('jobs 390 - job: {}'.format(job))
+
     job['bg'] = False
     job['status'] = "running"
     print_one_job(tid)
-    mlog.log('jobs 395 - about to goin wait_for_active_job()')
-    wait_for_active_job()
+
+    give_terminal_to(job['pgrp'])
+    for pid in job['pids']:
+        try:
+            os.kill(pid, signal.SIGCONT)
+        except ProcessLookupError:
+            pass
+    try:
+        os.waitpid(-1, os.WUNTRACED)
+    except ChildProcessError:  # No child processes
+        pass
+    pgid = os.getpgid(0)
+    give_terminal_to(pgid)
+
+
 fg.__xonsh_threadable__ = False
 
 

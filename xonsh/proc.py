@@ -1844,8 +1844,6 @@ class CommandPipeline:
         yields each line. This may optionally accept lines (in bytes) to iterate
         over, in which case it does not call iterraw().
         """
-        if self.spec.alias and hasattr(self.spec.alias, '__name__') and 'fg' in self.spec.alias.__name__:
-            import pdb; pdb.set_trace()
         mlog.log('proc 1837 - enter tee_stdout()')
         env = builtins.__xonsh_env__
         enc = env.get('XONSH_ENCODING')
