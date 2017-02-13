@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Job control for the xonsh shell."""
+import mlog
 import os
 import sys
 import time
@@ -165,6 +166,7 @@ else:
                                              _block_when_giving)
             try:
                 os.tcsetpgrp(sys.stderr.fileno(), pgid)
+                mlog.log('jobs 175 - gave term to {}'.format(pgid))
                 return True
             except Exception as e:
                 print_exception('error in tcsetpgrp:')
@@ -185,6 +187,8 @@ else:
         obj = active_task['obj']
         backgrounded = False
         try:
+            mlog.log('jobs 190 - active job: {}'.format(active_task))
+            mlog.log('jobs 191 - waiting pid: {}'.format(obj.pid))
             _, wcode = os.waitpid(obj.pid, os.WUNTRACED)
         except ChildProcessError:  # No child processes
             return wait_for_active_job(last_task=active_task,

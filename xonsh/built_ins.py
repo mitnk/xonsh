@@ -4,6 +4,7 @@
 Note that this module is named 'built_ins' so as not to be confused with the
 special Python builtins module.
 """
+import mlog
 import io
 import os
 import re
@@ -794,6 +795,7 @@ def run_subproc(cmds, captured=False):
     """
     specs = cmds_to_specs(cmds, captured=captured)
     captured = specs[-1].captured
+    mlog.log('bi 798 - last spec captured: {}'.format(captured))
     if captured == 'hiddenobject':
         command = HiddenCommandPipeline(specs)
     else:

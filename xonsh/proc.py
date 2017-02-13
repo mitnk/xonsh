@@ -7,6 +7,7 @@ The contents of `subprocess.py` (and, thus, the reproduced methods) are
 Copyright (c) 2003-2005 by Peter Astrand <astrand@lysator.liu.se> and were
 licensed to the Python Software foundation under a Contributor Agreement.
 """
+import mlog
 import io
 import os
 import re
@@ -1694,6 +1695,8 @@ class CommandPipeline:
             if self.starttime is None:
                 self.starttime = time.time()
             proc = spec.run(pipeline_group=pipeline_group)
+            mlog.log('proc 1698 - spec run {} {}'.format(spec.cmd, spec.cls.__name__))
+            mlog.log('proc 1699 - proc pid: {}'.format(getattr(proc, 'pid', 'nopid')))
             if proc.pid and pipeline_group is None and not spec.is_proxy and \
                     self.captured != 'object':
                 pipeline_group = proc.pid
