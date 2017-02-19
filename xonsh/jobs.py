@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Job control for the xonsh shell."""
+import mlog
 import os
 import sys
 import time
@@ -136,6 +137,7 @@ else:
             oldmask = signal.pthread_sigmask(signal.SIG_BLOCK,
                                              _block_when_giving)
             os.tcsetpgrp(FD_STDERR, pgid)
+            mlog.log('jobs 140 - gave term to {}'.format(pgid))
             signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
             return True
 

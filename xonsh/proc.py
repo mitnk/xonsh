@@ -1689,6 +1689,7 @@ def update_fg_process_group(pipeline_group, background):
     env = builtins.__xonsh_env__
     if not env.get('XONSH_INTERACTIVE'):
         return False
+    mlog.log('proc 1692 - try give term to {}'.format(pipeline_group))
     return give_terminal_to(pipeline_group)
 
 
@@ -1746,11 +1747,11 @@ class CommandPipeline:
             if self.starttime is None:
                 self.starttime = time.time()
             try:
-                mlog.log('proc 1749 - spec {} cmd:{} args:{}'.format(
-                    spec.cls.__name__,
-                    spec.cmd, spec.args,
-                ))
+                mlog.log('proc 1749 - spec cmd:{} args:{}'.format(
+                    spec.cmd, spec.args))
                 proc = spec.run(pipeline_group=pipeline_group)
+                mlog.log('proc 1749 - spec cls: {} proc pid: {}'.format(
+                    spec.cls.__name__, getattr(proc, 'pid', 'nopid')))
             except XonshError:
                 self._return_terminal()
                 raise
@@ -2020,6 +2021,7 @@ class CommandPipeline:
         pgid = os.getpgid(0)
         if self.term_pgid is None or pgid == self.term_pgid:
             return
+        mlog.log('proc 2025 - try return term to {}'.format(pgid))
         if give_terminal_to(pgid):  # if gave term succeed
             self.term_pgid = pgid
             if hasattr(builtins, '__xonsh_shell__'):
