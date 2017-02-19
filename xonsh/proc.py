@@ -7,6 +7,7 @@ The contents of `subprocess.py` (and, thus, the reproduced methods) are
 Copyright (c) 2003-2005 by Peter Astrand <astrand@lysator.liu.se> and were
 licensed to the Python Software foundation under a Contributor Agreement.
 """
+import mlog
 import io
 import os
 import re
@@ -1745,6 +1746,10 @@ class CommandPipeline:
             if self.starttime is None:
                 self.starttime = time.time()
             try:
+                mlog.log('proc 1749 - spec {} cmd:{} args:{}'.format(
+                    spec.cls.__name__,
+                    spec.cmd, spec.args,
+                ))
                 proc = spec.run(pipeline_group=pipeline_group)
             except XonshError:
                 self._return_terminal()
