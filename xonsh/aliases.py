@@ -199,10 +199,14 @@ def _SOURCE_FOREIGN_PARSER():
     parser.add_argument('--seterrpostcmd', default=None, dest='seterrpostcmd',
                         help='command(s) to set exit-on-error after all'
                              'other commands.')
+    parser.add_argument('--overwrite-aliases', default=False, action='store_true',
+                        dest='overwrite_aliases',
+                        help='flag for whether or not sourced aliases should '
+                             'replace the current xonsh aliases.')
     return parser
 
 
-def source_foreign(args, stdin=None):
+def source_foreign(args, stdin=None, stdout=None, stderr=None):
     """Sources a file written in a foreign shell language."""
     ns = _SOURCE_FOREIGN_PARSER.parse_args(args)
     if ns.prevcmd is not None:
@@ -244,7 +248,13 @@ def source_foreign(args, stdin=None):
     for k, v in fsaliases.items():
         if k in baliases and v == baliases[k]:
             continue  # no change from original
-        baliases[k] = v
+        elif ns.overwite_aliases or k not in baliases:
+            baliases[k] = v
+        else:
+            msg = ('Skipping application of {0!r} alias from {1!r} '
+                   'since it shares a name with an existing xonsh alias. '
+                   'Use "--overwrite-alias" option to apply it anyway.')
+            print(msg.format(k, ns.shell), file=stderr)
 
 
 def source_alias(args, stdin=None):
@@ -353,11 +363,12 @@ def xonfig(args, stdin=None):
 
 
 @unthreadable
-def trace(args, stdin=None):
+def trace(args, stdin=None, stdout=None, stderr=None, spec=None):
     """Runs the xonsh tracer utility."""
     from xonsh.tracer import tracermain  # lazy import
     try:
-        return tracermain(args)
+        return tracermain(args, stdin=stdin, stdout=stdout,
+                          stderr=stderr, spec=spec)
     except SystemExit:
         pass
 
