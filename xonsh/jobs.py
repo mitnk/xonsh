@@ -134,15 +134,17 @@ else:
             return True
     else:
         def give_terminal_to(pgid):
+            if pgid is None:
+                return False
             oldmask = signal.pthread_sigmask(signal.SIG_BLOCK,
                                              _block_when_giving)
-            if pgid is None:
-                signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
-                return False
             try:
                 os.tcsetpgrp(FD_STDERR, pgid)
                 mlog.log('jobs 140 - gave term to {}'.format(pgid))
                 return True
+            except ProcessLookupError:
+                # when the process finished before give terminal to it
+                return False
             except OSError as e:
                 if e.errno == 22:  # [Errno 22] Invalid argument
                     # there are cases that all the processes of pgid have
