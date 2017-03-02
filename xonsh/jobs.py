@@ -136,6 +136,9 @@ else:
         def give_terminal_to(pgid):
             oldmask = signal.pthread_sigmask(signal.SIG_BLOCK,
                                              _block_when_giving)
+            if pgid is None:
+                signal.pthread_sigmask(signal.SIG_SETMASK, oldmask)
+                return False
             try:
                 os.tcsetpgrp(FD_STDERR, pgid)
                 mlog.log('jobs 140 - gave term to {}'.format(pgid))
@@ -145,6 +148,11 @@ else:
                     # there are cases that all the processes of pgid have
                     # finished, then we don't need to do anything here, see
                     # issue #2220
+                    return False
+                elif e.errno == 25:  # [Errno 25] Inappropriate ioctl for device
+                    # There are also cases where we are not connected to a
+                    # real TTY, even though we may be run in interactive
+                    # mode. See issue #2267 for an example with emacs
                     return False
                 else:
                     raise
@@ -246,7 +254,7 @@ def add_job(info):
     info['status'] = "running"
     tasks.appendleft(num)
     builtins.__xonsh_all_jobs__[num] = info
-    if info['bg']:
+    if info['bg'] and builtins.__xonsh_env__.get('XONSH_INTERACTIVE'):
         print_one_job(num)
 
 
@@ -360,7 +368,8 @@ def fg(args, stdin=None):
     job = get_task(tid)
     job['bg'] = False
     job['status'] = "running"
-    print_one_job(tid)
+    if builtins.__xonsh_env__.get('XONSH_INTERACTIVE'):
+        print_one_job(tid)
     pipeline = job['pipeline']
     pipeline.resume(job)
 

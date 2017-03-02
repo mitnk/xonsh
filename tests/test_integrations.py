@@ -176,6 +176,36 @@ def _f():
 aliases['f'] = _f
 f
 """, "hello\n", 0),
+# test ambiguous globs
+("""
+import os
+
+def _echo(args):
+    print(' '.join(args))
+aliases['echo'] = _echo
+
+files = ['Actually_test.tst', 'Actually.tst', 'Complete_test.tst', 'Complete.tst']
+
+# touch the file
+for f in files:
+    with open(f, 'w'):
+        pass
+
+# echo the files
+echo *.tst and echo *_test.tst
+echo *_test.tst
+echo *_test.tst and echo *.tst
+
+# remove the files
+for f in files:
+    os.remove(f)
+""",
+'Actually.tst Actually_test.tst Complete.tst Complete_test.tst\n'
+'Actually_test.tst Complete_test.tst\n'
+'Actually_test.tst Complete_test.tst\n'
+'Actually_test.tst Complete_test.tst\n'
+'Actually.tst Actually_test.tst Complete.tst Complete_test.tst\n',
+0),
 ]
 
 
@@ -232,6 +262,26 @@ def test_printname():
 def test_sourcefile():
     check_run_xonsh('printfile.xsh', None, 'printfile.xsh\n')
 
+
+@_bad_case
+@pytest.mark.parametrize('cmd, fmt, exp', [
+    # test subshell wrapping
+    ("""
+with open('tttt', 'w') as fp:
+    fp.write("Wow mom!\\n")
+
+(wc) < tttt
+""", None, " 1  2 9 <stdin>\n"),
+    # test subshell statement wrapping
+    ("""
+with open('tttt', 'w') as fp:
+    fp.write("Wow mom!\\n")
+
+(wc;) < tttt
+""", None, " 1  2 9 <stdin>\n"),
+])
+def test_subshells(cmd, fmt, exp):
+    check_run_xonsh(cmd, fmt, exp)
 
 
 @skip_if_on_windows

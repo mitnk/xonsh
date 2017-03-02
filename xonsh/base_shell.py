@@ -7,7 +7,8 @@ import time
 import builtins
 
 from xonsh.tools import (XonshError, print_exception, DefaultNotGiven,
-                         check_for_partial_string, format_std_prepost)
+                         check_for_partial_string, format_std_prepost,
+                         LINE_CONTINUATION)
 from xonsh.platform import HAS_PYGMENTS, ON_WINDOWS
 from xonsh.codecache import (should_use_cache, code_cache_name,
                              code_cache_check, get_cache_filename,
@@ -16,6 +17,8 @@ from xonsh.completer import Completer
 from xonsh.prompt.base import multiline_prompt, PromptFormatter
 from xonsh.events import events
 from xonsh.shell import transform_command
+from xonsh.lazyimps import pygments, pyghooks
+from xonsh.ansi_colors import ansi_partial_color_format
 
 if ON_WINDOWS:
     import ctypes
@@ -157,13 +160,15 @@ class _TeeStd(io.TextIOBase):
 
     def write(self, s):
         """Writes data to the original std stream and the in-memory object."""
+        self.mem.write(s)
+        if self.std is None:
+            return
         std_s = s
         if self.prestd:
             std_s = self.prestd + std_s
         if self.poststd:
             std_s += self.poststd
         self.std.write(std_s)
-        self.mem.write(s)
 
     def flush(self):
         """Flushes both the original stdout and the buffer."""
@@ -268,6 +273,7 @@ class BaseShell(object):
         self.mlprompt = None
         self._styler = DefaultNotGiven
         self.prompt_formatter = PromptFormatter()
+        self.accumulated_inputs = ''
 
     @property
     def styler(self):
@@ -334,6 +340,7 @@ class BaseShell(object):
         finally:
             ts1 = ts1 or time.time()
             self._append_history(inp=src, ts=[ts0, ts1], tee_out=tee.getvalue())
+            self.accumulated_inputs += src
             tee.close()
             self._fix_cwd()
         if builtins.__xonsh_exit__:  # pylint: disable=no-member
@@ -368,14 +375,36 @@ class BaseShell(object):
             hist.last_cmd_rtn = hist.last_cmd_out = None
 
     def _fix_cwd(self):
-        """Check if the cwd changed out from under us"""
-        cwd = os.getcwd()
-        if cwd != builtins.__xonsh_env__.get('PWD'):
-            old = builtins.__xonsh_env__.get('PWD')  # working directory changed without updating $PWD
-            builtins.__xonsh_env__['PWD'] = cwd      # track it now
-            if old is not None:
-                builtins.__xonsh_env__['OLDPWD'] = old  # and update $OLDPWD like dirstack.
-            events.on_chdir.fire(olddir=old, newdir=cwd)              # fire event after cwd actually changed.
+        """Check if the cwd changed out from under us."""
+        env = builtins.__xonsh_env__
+        try:
+            cwd = os.getcwd()
+        except (FileNotFoundError, OSError):
+            cwd = None
+        if cwd is None:
+            # directory has been deleted out from under us, most likely
+            pwd = env.get('PWD', None)
+            if pwd is None:
+                # we have no idea where we are
+                env['PWD'] = '<invalid directory>'
+            elif os.path.isdir(pwd):
+                # unclear why os.getcwd() failed. do nothing.
+                pass
+            else:
+                # OK PWD is really gone.
+                msg = '{UNDERLINE_INTENSE_WHITE}{BACKGROUND_INTENSE_BLACK}'
+                msg += "xonsh: working directory does not exist: " + pwd
+                msg += '{NO_COLOR}'
+                self.print_color(msg, file=sys.stderr)
+        elif 'PWD' not in env:
+            # $PWD is missing from env, recreate it
+            env['PWD'] = cwd
+        elif os.path.realpath(cwd) != os.path.realpath(env['PWD']):
+            # The working directory has changed without updating $PWD, fix this
+            old = env['PWD']
+            env['PWD'] = cwd
+            env['OLDPWD'] = old
+            events.on_chdir.fire(olddir=old, newdir=cwd)
 
     def push(self, line):
         """Pushes a line onto the buffer and compiles the code in a way that
@@ -400,7 +429,7 @@ class BaseShell(object):
             if usecache:
                 self.reset_buffer()
                 return src, code
-        if src.endswith('\\\n'):
+        if src.endswith(str(LINE_CONTINUATION)+'\n'):
             self.need_more_lines = True
             return src, None
         try:
@@ -475,19 +504,32 @@ class BaseShell(object):
         self.settitle()
         return p
 
-    def format_color(self, string, **kwargs):
-        """Formats the colors in a string. This base implmentation does not
-        actually do any coloring, but just returns the string directly.
+    def format_color(self, string, hide=False, force_string=False, **kwargs):
+        """Formats the colors in a string. This base implmentation colors based
+        on ANSI color codes
         """
-        return string
+        style = builtins.__xonsh_env__.get('XONSH_COLOR_STYLE')
+        return ansi_partial_color_format(string, hide=hide, style=style)
 
-    def print_color(self, string, **kwargs):
-        """Prints a string in color. This base implmentation does not actually
-        do any coloring, but just prints the string directly.
+    def print_color(self, string, hide=False, **kwargs):
+        """Prints a string in color. This base implmentation will color based
+        ANSI color codes if a string was given as input. If a list of token
+        pairs is given, it will color based on pygments, if available. If
+        pygments is not available, it will print a colorless string.
         """
-        if not isinstance(string, str):
-            string = ''.join([x for _, x in string])
-        print(string, **kwargs)
+        if isinstance(string, str):
+            s = self.format_color(string, hide=hide)
+        elif HAS_PYGMENTS:
+            # assume this is a list of (Token, str) tuples and format it
+            env = builtins.__xonsh_env__
+            self.styler.style_name = env.get('XONSH_COLOR_STYLE')
+            style_proxy = pyghooks.xonsh_style_proxy(self.styler)
+            formatter = pyghooks.XonshTerminal256Formatter(style=style_proxy)
+            s = pygments.format(string, formatter).rstrip()
+        else:
+            # assume this is a list of (Token, str) tuples and remove color
+            s = ''.join([x for _, x in string])
+        print(s, **kwargs)
 
     def color_style_names(self):
         """Returns an iterable of all available style names."""

@@ -4,6 +4,196 @@ Xonsh Change Log
 
 .. current developments
 
+v0.5.7
+====================
+
+**Added:**
+
+* New ``color_tools`` module provides basic color tools for converting
+  to and from various formats as well as creating pallettes from color
+  strings.
+* Redirections may now be used in string and list-of-strings
+  aliases.
+* Subprocess redirection may now forego the whitespace between the
+  redirection and a file name.  For example,
+  ``echo hello world >/dev/null``.
+* Add a ``-P`` flag to the ``cd`` function in order to change directory and
+  following symlinks.
+* ``xonfig tutorial`` command to launch the http://xon.sh/tutorial in the
+  browser.
+* ``@(...)`` syntax now supports generators and tuples without parentheses.
+* Sourcing foreign shells now have the ``--show`` option, which
+  lets you see when script will be run, and the ``--dryrun``
+  option which prevents the source from actually taking place.
+  Xonsh's foreign shell API also added these keyword arguments.
+* Subprocess mode now supports subshells. Place any xonsh
+  code between two parentheses, e.g. ``(cmd)``, to run
+  this command in a separate xonsh subprocess.
+* Foreign shell aliases now have the ability to take extra arguments,
+  if needed.
+* Xonsh will issue a warning message when the current working
+  directory has been remove out from under it and not replaced
+  prior to running the next command.
+* Line continuation backslashes are respected on Windows in the PTK shell if
+  the backspace is is preceded by a space.
+* Added ``ponysay`` as a command which will ususally not run in a
+  threaded mode in the commands cache.
+* New ``jsonutils`` module available for serializing special
+  xonsh objects to JSON.
+
+
+**Changed:**
+
+* The literal tokens ``and`` and ``or`` must be surrounded by
+  whitespace to delimit subprocess mode. If they do not have
+  whitespace on both sides in subproc mode, they are condisered
+  to be part of a command argument.
+* The ``xontrib`` command is now flagged as unthreadable and will be
+  run on the main Python thread. This allows xontribs to set signal
+  handlers and other operations that require the main thread.
+* nvim (Neovim) has been flagged as unthreadable
+* The interactive prompt will now catch ``SystemExit`` and, instead
+  of exiting the session, will refresh the prompt. This is the same
+  process as for keyboard interrupts.
+* Xonsh no longer launches the wizard for new users. Instead a welcome screen is
+  shown which says how to launch the wizard.
+* Added Windows ``expanduser()``-like function which prevents
+  the expansion of ``~`` that are not followed by a path
+  separator.
+* Collecting xonsh history files was reported to have random runtime
+  OSError failures. This exception is now handled, just in case. The
+  The exception will still be printed in debug mode.
+* ``Shell.stype`` has been renamed to ``Shell.shell_type``.
+* The configuration wizard now displays the proper control sequence to leave
+  the wizard at the to start of the wizard itself. Note that this is Ctrl+D for
+  readline and Ctrl+C for prompt-toolkit.
+* Callable alias proxy functions are now more friendly to
+  ``functools.partial()``.
+* ``prompt.vc.get_hg_branch`` now uses ``os.scandir`` to walk up the filetree
+  looking for a ``.hg`` directory. This results in (generally) faster branch
+  resolution compared to the subprocess call to ``hg root``.
+* Xonsh's script and code caches will are now invalidated whenever the
+  xonsh version changes for a given Python version.
+* Autowrapping of subprocess globs has been improved to cover
+  more cases that are ambiguous with Python syntax.
+* Job control info when foregrounding or backgrounding jobs will now
+  only be displayed when xonsh is in interactive mode.
+* Enabled virtual terminal processing in the prompt-toolkit shell for Windows.
+
+
+**Fixed:**
+
+* 3rd party pygments styles (like solorized or monokailight) are now
+  able to be used in xonsh. These styles are dynamically created upon
+  first use, rather than being lazily loaded by xonsh.
+* On Windows, ``os.environ`` is case insensitive. This would potentially
+  change the case of envrionment variables set into the environment.
+  Xonsh now uses ``nt.envrion``, the case sensitive counterpart, to avoid
+  these issues on Windows.
+* Fix how ``$PWD`` is managed in order to work with symlinks gracefully
+* ``history replay`` no longer barfs on ``style_name`` when setting up the
+  environment
+* ``Shell.shell_type`` is now properly set to the same value as ``$SHELL_TYPE``.
+* Fixed ``source-zsh`` to work with zsh v5.2.
+* Fixed issue where ``del (x, y)`` would raise a syntax error.
+* Certain vim commands issue commands involving subshells,
+  and this is now supported.
+* Null bytes handed to Popen are now automatically escaped prior
+  to running a subprocess. This preevents Popen from issuing
+  embedded null byte exceptions.
+* Xonsh will no longer crash is the current working directory is
+  removed out from under it.
+* Multiline strings can now be written in subprocess mode.
+* PTK completions will now correctly deduplicate autosuggest completions
+  and display completions values based on the cursor position.
+* Fixed bug where trailing backspaces on Windows paths could be interpreted
+  as line continuations characters. Now line continuation characters must be
+  preceded by a space on Windows. This only applies to xonsh in interactive
+  mode to ensure  scripts are portable.
+* Importing ``*.xsh`` files will now respect the encoding listed in
+  that file and properly fallback to UTF-8. This beahviour follows
+  the rules described in PEP 263.
+* Wizard is now able to properly serialize envrionment paths.
+
+
+v0.5.6
+====================
+
+**Added:**
+
+* New core utility function aliases (written in pure Python) are now
+  available in ``xonsh.xoreutils``. These include: ``cat``, ``echo``,
+  ``pwd``, ``tee``, ``tty``, and ``yes``. These are not enabled by default.
+  Use the new ``coreutils`` xontrib to load them.
+* CircleCI test post codecov run
+* The ``trace`` will automatically disable color printing when
+  stdout is not a TTY or stdout is captured.
+* New ``jedi`` xontrib enables jedi-based tab completions when it is loaded.
+  This supercedes xonsh's default Python-mode completer.
+* The lexer has a new ``split()`` method which splits strings
+  according to xonsh's rules for whitespace and quotes.
+* New events for hooking into the Python import process are now available.
+  You can now provide a handler for:
+
+  - ``on_import_pre_find_spec``
+  - ``on_import_post_find_spec``
+  - ``on_import_pre_create_module``
+  - ``on_import_post_create_module``
+  - ``on_import_pre_exec_module``
+  - ``on_import_post_exec_module``
+
+
+**Changed:**
+
+* The prompt toolkit shell's first completion will now be the
+  current token from the auto-suggetion, if available.
+* Sourcing foreign shells will now safely skip applying aliases
+  with the same name as existing xonsh aliases by default.
+  This prevents accitidentally overwriting important xonsh standard
+  aliases, such as ``cd``.
+
+
+**Fixed:**
+
+* Threadable predicition for subprocesses will now consult both the command
+  as it was typed in and any resolved aliases.
+* The first prompt will no longer print in the middle of the line if the user has
+  already started typing.
+* Windows consoles will now automatically enable virtual terminal processing
+  with the readline shell, if available. This allows the full use of ANSI
+  escape sequences.
+* On the Windows readline shell, the teb-completion supression prompt will no
+  longer error out depending on what you press.
+* Fixed issue with subprocess mode wrapping not repecting line continuation
+  backslashes.
+* Handle a bug where Bash On Windows causes platform.windows_bash_command()
+  to raise CalledProcessError.
+* Fixed issues pertaining to completing from raw string paths.
+  This is particularly relevant to Windows, where raw strings
+  are instered in path completion.
+* Replace deprecated calls to ``time.clock()`` by calls to
+  ``time.perf_counter()``.
+* Use ``clock()`` to set the start time of ``_timings`` in non-windows instead
+  of manually setting it to ``0.0``.
+* The ``trace`` utility will now correctly color output and not
+  print extraneous newlines when called in a script.
+* The ``@$(cmd)`` operator now correctly splits strings according to
+  xonsh semantics, rather than just on whitespace using ``str.split()``.
+* The ``mpl`` xontrib has been updated to improve matplotlib
+  handling. If ``xontrib load mpl`` is run before matplotlib
+  is imported and xonsh is in ineteractive mode, matplotlib
+  will automatically enter interactive mode as well. Additionally,
+  ``pyplot.show()`` is patched in interactive mode to be non-blocking.
+  If a non-blocking show fails to draw the figre for some reason,
+  a regular blocking version is called.
+* Fixed issues like ``timeit ls`` causing OSError - "Inappropriate ioctl
+  for device".
+* Fixed a potential "OSError: [Errno 22] Invalid argument" to increase job
+  control stability.
+
+
+
+
 v0.5.5
 ====================
 

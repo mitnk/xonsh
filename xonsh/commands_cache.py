@@ -353,6 +353,8 @@ def default_threadable_predictors():
         'mvim': predict_help_ver,
         'mutt': predict_help_ver,
         'nano': predict_help_ver,
+        'nvim': predict_false,
+        'ponysay': predict_help_ver,
         'psql': predict_false,
         'python': predict_shell,
         'python2': predict_shell,

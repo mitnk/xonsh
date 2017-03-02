@@ -14,8 +14,9 @@ except ImportError:
 from xonsh.lazyasd import lazyobject
 from xonsh.platform import PYTHON_VERSION_INFO
 from xonsh.tokenize import (OP, IOREDIRECT, STRING, DOLLARNAME, NUMBER,
-                            SEARCHPATH, NEWLINE, INDENT, DEDENT, NL, COMMENT, ENCODING,
-                            ENDMARKER, NAME, ERRORTOKEN, tokenize, TokenError)
+                            SEARCHPATH, NEWLINE, INDENT, DEDENT, NL, COMMENT,
+                            ENCODING, ENDMARKER, NAME, ERRORTOKEN, GREATER,
+                            LESS, RIGHTSHIFT, tokenize, TokenError)
 
 
 @lazyobject
@@ -68,15 +69,18 @@ def token_map():
 def handle_name(state, token):
     """Function for handling name tokens"""
     typ = 'NAME'
-    state['last'] = token
     if state['pymode'][-1][0]:
         if token.string in kwmod.kwlist:
             typ = token.string.upper()
+        state['last'] = token
         yield _new_token(typ, token.string, token.start)
     else:
-        if token.string == 'and':
+        prev = state['last']
+        state['last'] = token
+        has_whitespace = prev.end != token.start
+        if token.string == 'and' and has_whitespace:
             yield _new_token('AND', token.string, token.start)
-        elif token.string == 'or':
+        elif token.string == 'or' and has_whitespace:
             yield _new_token('OR', token.string, token.start)
         else:
             yield _new_token('NAME', token.string, token.start)
@@ -167,6 +171,24 @@ def handle_double_pipe(state, token):
     yield _new_token('OR', 'or', token.start)
 
 
+def handle_redirect(state, token):
+    # The parser expects whitespace after a redirection in subproc mode.
+    # If whitespace does not exist, we'll issue an empty whitespace
+    # token before proceeding.
+    state['last'] = token
+    typ = token.type
+    st = token.string
+    key = (typ, st) if (typ, st) in token_map else typ
+    yield _new_token(token_map[key], st, token.start)
+    if state['pymode'][-1][0]:
+        return
+    # add a whitespace token after a redirection, if we need to
+    next_tok = next(state['stream'])
+    if next_tok.start == token.end:
+        yield _new_token('WS', '', token.end)
+    yield from handle_token(state, next_tok)
+
+
 def _make_matcher_handler(tok, typ, pymode, ender, handlers):
     matcher = (')' if tok.endswith('(') else
                '}' if tok.endswith('{') else
@@ -192,6 +214,13 @@ def special_handlers():
         ENDMARKER: handle_ignore,
         NAME: handle_name,
         ERRORTOKEN: handle_error_token,
+        LESS: handle_redirect,
+        GREATER: handle_redirect,
+        RIGHTSHIFT: handle_redirect,
+        IOREDIRECT: handle_redirect,
+        (OP, '<'): handle_redirect,
+        (OP, '>'): handle_redirect,
+        (OP, '>>'): handle_redirect,
         (OP, ')'): handle_rparen,
         (OP, '}'): handle_rbrace,
         (OP, ']'): handle_rbracket,
@@ -333,6 +362,33 @@ class Lexer(object):
         while t is not None:
             yield t
             t = self.token()
+
+    def split(self, s):
+        """Splits a string into a list of strings which are whitepace-separated
+        tokens.
+        """
+        vals = []
+        self.input(s)
+        l = c = -1
+        ws = 'WS'
+        nl = '\n'
+        for t in self:
+            if t.type == ws:
+                continue
+            elif l < t.lineno:
+                vals.append(t.value)
+            elif len(vals) > 0 and c == t.lexpos:
+                vals[-1] = vals[-1] + t.value
+            else:
+                vals.append(t.value)
+            nnl = t.value.count(nl)
+            if nnl == 0:
+                l = t.lineno
+                c = t.lexpos + len(t.value)
+            else:
+                l = t.lineno + nnl
+                c = len(t.value.rpartition(nl)[-1])
+        return vals
 
     #
     # All the tokens recognized by the lexer

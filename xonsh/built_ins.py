@@ -498,6 +498,7 @@ class SubprocSpec:
                 kwargs.pop('preexec_fn')
             p = self.cls(self.alias, self.cmd, **kwargs)
         else:
+            self._fix_null_cmd_bytes()
             p = self._run_binary(kwargs)
         p.spec = self
         p.last_in_pipeline = self.last_in_pipeline
@@ -546,6 +547,14 @@ class SubprocSpec:
                 signal.signal(signal.SIGTSTP, default_signal_pauser)
         kwargs['preexec_fn'] = xonsh_preexec_fn
 
+    def _fix_null_cmd_bytes(self):
+        # Popen does not accept null bytes in its input commands.
+        # that doesn;t stop some subproces from using them. Here we
+        # escape them just in case.
+        cmd = self.cmd
+        for i in range(len(cmd)):
+            cmd[i] = cmd[i].replace('\0', '\\0')
+
     #
     # Building methods
     #
@@ -559,8 +568,10 @@ class SubprocSpec:
         # modifications that do not alter cmds may come before creating instance
         spec = kls(cmd, cls=cls, **kwargs)
         # modifications that alter cmds must come after creating instance
+        # perform initial redirects
         spec.redirect_leading()
         spec.redirect_trailing()
+        # apply aliases
         spec.resolve_alias()
         spec.resolve_binary_loc()
         spec.resolve_auto_cd()
@@ -623,13 +634,16 @@ class SubprocSpec:
     def resolve_executable_commands(self):
         """Resolve command executables, if applicable."""
         alias = self.alias
-        if callable(alias):
+        if alias is None:
+            pass
+        elif callable(alias):
             self.cmd.pop(0)
             return
-        elif alias is None:
-            pass
         else:
             self.cmd = alias + self.cmd[1:]
+            # resolve any redirects the aliases may have applied
+            self.redirect_leading()
+            self.redirect_trailing()
         if self.binary_loc is None:
             return
         try:
@@ -839,8 +853,13 @@ def subproc_captured_stdout(*cmds):
 
 def subproc_captured_inject(*cmds):
     """Runs a subprocess, capturing the output. Returns a list of
-    whitespace-separated strings in the stdout that was produced."""
-    return [i.strip() for i in run_subproc(cmds, captured='stdout').split()]
+    whitespace-separated strings of the stdout that was produced.
+    The string is split using xonsh's lexer, rather than Python's str.split()
+    or shlex.split().
+    """
+    s = run_subproc(cmds, captured='stdout')
+    toks = builtins.__xonsh_execer__.parser.lexer.split(s)
+    return toks
 
 
 def subproc_captured_object(*cmds):
@@ -880,7 +899,7 @@ def list_of_strs_or_callables(x):
     """Ensures that x is a list of strings or functions"""
     if isinstance(x, str) or callable(x):
         rtn = [x]
-    elif isinstance(x, cabc.Sequence):
+    elif isinstance(x, cabc.Iterable):
         rtn = [i if isinstance(i, str) or callable(i) else str(i) for i in x]
     else:
         rtn = [str(x)]

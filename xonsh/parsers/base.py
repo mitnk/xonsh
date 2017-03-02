@@ -20,6 +20,7 @@ from xonsh.tokenize import SearchPath, StringPrefix
 from xonsh.lazyasd import LazyObject
 from xonsh.parsers.context_check import check_contexts
 
+
 RE_SEARCHPATH = LazyObject(lambda: re.compile(SearchPath), globals(),
                            'RE_SEARCHPATH')
 RE_STRINGPREFIX = LazyObject(lambda: re.compile(StringPrefix), globals(),
@@ -169,6 +170,18 @@ def store_ctx(x):
             store_ctx(e)
     elif isinstance(x, ast.Starred):
         store_ctx(x.value)
+
+
+def del_ctx(x):
+    """Recursively sets ctx to ast.Del()"""
+    if not hasattr(x, 'ctx'):
+        return
+    x.ctx = ast.Del()
+    if isinstance(x, (ast.Tuple, ast.List)):
+        for e in x.elts:
+            del_ctx(e)
+    elif isinstance(x, ast.Starred):
+        del_ctx(x.value)
 
 
 def empty_list_if_newline(x):
@@ -1038,8 +1051,9 @@ class BaseParser(object):
         p1 = p[1]
         p2 = p[2]
         for targ in p2:
-            targ.ctx = ast.Del()
-        p0 = ast.Delete(targets=p2, lineno=p1.lineno, col_offset=p1.lexpos)
+            del_ctx(targ)
+        p0 = ast.Delete(targets=p2, ctx=ast.Del(),
+                        lineno=p1.lineno, col_offset=p1.lexpos)
         p[0] = p0
 
     def p_pass_stmt(self, p):
@@ -2509,6 +2523,24 @@ class BaseParser(object):
         p1.append(p[3])
         p[0] = p1
 
+    def p_subproc_atoms_subshell(self, p):
+        """subproc_atoms : lparen_tok any_raw_tok rparen_tok
+                         | lparen_tok any_raw_toks rparen_tok
+        """
+        p1 = p[1]
+        p3 = p[3]
+        l = p1.lineno
+        c = p1.lexpos + 1
+        subcmd = self.source_slice((l, c), (p3.lineno, p3.lexpos))
+        subcmd = subcmd.strip() + '\n'
+        p0 = [ast.Str(s='xonsh', lineno=l, col_offset=c),
+              ast.Str(s='-c', lineno=l, col_offset=c),
+              ast.Str(s=subcmd, lineno=l, col_offset=c),
+              ]
+        for arg in p0:
+            arg._cliarg_action = 'append'
+        p[0] = p0
+
     #
     # Subproc atom rules
     #
@@ -2580,7 +2612,7 @@ class BaseParser(object):
         p[0] = p0
 
     def p_subproc_atom_pyeval(self, p):
-        """subproc_atom : at_lparen_tok test RPAREN"""
+        """subproc_atom : at_lparen_tok testlist_comp RPAREN"""
         p1 = p[1]
         p0 = xonsh_call('__xonsh_list_of_strs_or_callables__', [p[2]],
                         lineno=p1.lineno, col=p1.lexpos)

@@ -34,12 +34,14 @@ import sys
 import threading
 import traceback
 import warnings
+import operator
 
-# adding further imports from xonsh modules is discouraged to avoid circular
+# adding imports from further xonsh modules is discouraged to avoid circular
 # dependencies
 from xonsh.lazyasd import LazyObject, LazyDict, lazyobject
 from xonsh.platform import (has_prompt_toolkit, scandir, DEFAULT_ENCODING,
-                            ON_LINUX, ON_WINDOWS, PYTHON_VERSION_INFO)
+                            ON_LINUX, ON_WINDOWS, PYTHON_VERSION_INFO,
+                            expanduser, os_environ)
 
 
 @functools.lru_cache(1)
@@ -84,7 +86,7 @@ class XonshCalledProcessError(XonshError, subprocess.CalledProcessError):
 def expand_path(s, expand_user=True):
     """Takes a string path and expands ~ to home if expand_user is set
     and environment vars if EXPAND_ENV_VARS is set."""
-    env = getattr(builtins, '__xonsh_env__', os.environ)
+    env = getattr(builtins, '__xonsh_env__', os_environ)
     if env.get('EXPAND_ENV_VARS', False):
         s = expandvars(s)
     if expand_user:
@@ -94,10 +96,10 @@ def expand_path(s, expand_user=True):
         # https://www.gnu.org/software/bash/manual/html_node/Tilde-Expansion.html
         pre, char, post = s.partition('=')
         if char:
-            s = os.path.expanduser(pre) + char
-            s += os.pathsep.join(map(os.path.expanduser, post.split(os.pathsep)))
+            s = expanduser(pre) + char
+            s += os.pathsep.join(map(expanduser, post.split(os.pathsep)))
         else:
-            s = os.path.expanduser(s)
+            s = expanduser(s)
     return s
 
 
@@ -105,7 +107,7 @@ def _expandpath(path):
     """Performs environment variable / user expansion on a given path
     if EXPAND_ENV_VARS is set.
     """
-    env = getattr(builtins, '__xonsh_env__', os.environ)
+    env = getattr(builtins, '__xonsh_env__', os_environ)
     expand_user = env.get('EXPAND_ENV_VARS', False)
     return expand_path(path, expand_user=expand_user)
 
@@ -114,7 +116,7 @@ def decode_bytes(b):
     """Tries to decode the bytes using XONSH_ENCODING if available,
     otherwise using sys.getdefaultencoding().
     """
-    env = getattr(builtins, '__xonsh_env__', os.environ)
+    env = getattr(builtins, '__xonsh_env__', os_environ)
     enc = env.get('XONSH_ENCODING') or DEFAULT_ENCODING
     err = env.get('XONSH_ENCODING_ERRORS') or 'strict'
     return b.decode(encoding=enc, errors=err)
@@ -197,6 +199,11 @@ class EnvPath(collections.MutableSequence):
     def __repr__(self):
         return repr(self._l)
 
+    def __eq__(self, other):
+        if len(self) != len(other):
+            return False
+        return all(map(operator.eq, self, other))
+
 
 class DefaultNotGivenType(object):
     """Singleton for representing when no default value is given."""
@@ -263,10 +270,12 @@ def find_next_break(line, mincol=0, lexer=None):
     return maxcol
 
 
-def subproc_toks(line, mincol=-1, maxcol=None, lexer=None, returnline=False):
+def subproc_toks(line, mincol=-1, maxcol=None, lexer=None, returnline=False,
+                 greedy=False):
     """Excapsulates tokens in a source code line in a uncaptured
     subprocess ![] starting at a minimum column. If there are no tokens
-    (ie in a comment line) this returns None.
+    (ie in a comment line) this returns None. If greedy is True, it will encapsulate
+    normal parentheses. Greedy is False by default.
     """
     if lexer is None:
         lexer = builtins.__xonsh_execer__.parser.lexer
@@ -289,13 +298,19 @@ def subproc_toks(line, mincol=-1, maxcol=None, lexer=None, returnline=False):
             continue
         if tok.type in LPARENS:
             lparens.append(tok.type)
+        if greedy and len(lparens) > 0 and 'LPAREN' in lparens:
+            toks.append(tok)
+            if tok.type == 'RPAREN':
+                lparens.pop()
+            continue
         if len(toks) == 0 and tok.type in BEG_TOK_SKIPS:
             continue  # handle indentation
         elif len(toks) > 0 and toks[-1].type in END_TOK_TYPES:
             if _is_not_lparen_and_rparen(lparens, toks[-1]):
                 lparens.pop()  # don't continue or break
             elif pos < maxcol and tok.type not in ('NEWLINE', 'DEDENT', 'WS'):
-                toks.clear()
+                if not greedy:
+                    toks.clear()
                 if tok.type in BEG_TOK_SKIPS:
                     continue
             else:
@@ -319,9 +334,13 @@ def subproc_toks(line, mincol=-1, maxcol=None, lexer=None, returnline=False):
             else:
                 tok.lexpos = len(line)
             break
+        elif check_bad_str_token(tok):
+            return
     else:
         if len(toks) > 0 and toks[-1].type in END_TOK_TYPES:
             if _is_not_lparen_and_rparen(lparens, toks[-1]):
+                pass
+            elif greedy and toks[-1].type == 'RPAREN':
                 pass
             else:
                 toks.pop()
@@ -336,7 +355,7 @@ def subproc_toks(line, mincol=-1, maxcol=None, lexer=None, returnline=False):
             end_offset = len(el)
     if len(toks) == 0:
         return  # handle comment lines
-    elif saw_macro:
+    elif saw_macro or greedy:
         end_offset = len(toks[-1].value.rstrip()) + 1
     beg, end = toks[0].lexpos, (toks[-1].lexpos + end_offset)
     end = len(line[:end].rstrip())
@@ -344,6 +363,56 @@ def subproc_toks(line, mincol=-1, maxcol=None, lexer=None, returnline=False):
     if returnline:
         rtn = line[:beg] + rtn + line[end:]
     return rtn
+
+
+def check_bad_str_token(tok):
+    """Checks if a token is a bad string."""
+    if tok.type == 'ERRORTOKEN' and tok.value == 'EOF in multi-line string':
+        return True
+    elif isinstance(tok.value, str) and not check_quotes(tok.value):
+        return True
+    else:
+        return False
+
+
+def check_quotes(s):
+    """Checks a string to make sure that if it starts with quotes, it also
+    ends with quotes.
+    """
+    starts_as_str = RE_BEGIN_STRING.match(s) is not None
+    ends_as_str = s.endswith('"') or s.endswith("'")
+    if not starts_as_str and not ends_as_str:
+        ok = True
+    elif starts_as_str and not ends_as_str:
+        ok = False
+    elif not starts_as_str and ends_as_str:
+        ok = False
+    else:
+        m = RE_COMPLETE_STRING.match(s)
+        ok = m is not None
+    return ok
+
+
+def _have_open_triple_quotes(s):
+    if s.count('"""') % 2 == 1:
+        open_triple = '"""'
+    elif s.count("'''") % 2 == 1:
+        open_triple = "'''"
+    else:
+        open_triple = False
+    return open_triple
+
+
+@lazyobject
+def LINE_CONTINUATION():
+    """ The line contiuation characters used in subproc mode. In interactive
+         mode on Windows the backslash must be preseeded by a space. This is because
+         paths on windows may end in a backspace.
+    """
+    if ON_WINDOWS and builtins.__xonsh_env__.get('XONSH_INTERACTIVE'):
+        return ' \\'
+    else:
+        return '\\'
 
 
 def get_logical_line(lines, idx):
@@ -355,10 +424,16 @@ def get_logical_line(lines, idx):
     n = 1
     nlines = len(lines)
     line = lines[idx]
-    while line.endswith('\\') and idx < nlines:
+    linecont = str(LINE_CONTINUATION)
+    open_triple = _have_open_triple_quotes(line)
+    while (line.endswith(linecont) or open_triple) and idx < nlines:
         n += 1
         idx += 1
-        line = line[:-1] + lines[idx]
+        if line.endswith(linecont):
+            line = line[:-1] + lines[idx]
+        else:
+            line = line + '\n' + lines[idx]
+        open_triple = _have_open_triple_quotes(line)
     return line, n
 
 
@@ -379,7 +454,7 @@ def replace_logical_line(lines, logical, idx, n):
             logical = ''
         else:
             # found space to split on
-            lines[i] = logical[:b] + '\\'
+            lines[i] = logical[:b] + str(LINE_CONTINUATION)
             logical = logical[b:]
     lines[idx+n-1] = logical
 
@@ -676,7 +751,7 @@ def print_exception(msg=None):
     env = getattr(builtins, '__xonsh_env__', None)
     # flags indicating whether the traceback options have been manually set
     if env is None:
-        env = os.environ
+        env = os_environ
         manually_set_trace = 'XONSH_SHOW_TRACEBACK' in env
         manually_set_logfile = 'XONSH_TRACEBACK_LOGFILE' in env
     else:
@@ -1501,7 +1576,8 @@ def intensify_colors_on_win_setter(enable):
     """
     enable = to_bool(enable)
     if hasattr(builtins, '__xonsh_shell__'):
-        delattr(builtins.__xonsh_shell__.shell.styler, 'style_name')
+        if hasattr(builtins.__xonsh_shell__.shell.styler, 'style_name'):
+            delattr(builtins.__xonsh_shell__.shell.styler, 'style_name')
     return enable
 
 
@@ -1526,7 +1602,7 @@ def format_std_prepost(template, env=None):
     return s
 
 
-_RE_STRING_START = "[bBrRuU]*"
+_RE_STRING_START = "[bBprRuU]*"
 _RE_STRING_TRIPLE_DOUBLE = '"""'
 _RE_STRING_TRIPLE_SINGLE = "'''"
 _RE_STRING_DOUBLE = '"'
@@ -1556,6 +1632,13 @@ RE_STRING_CONT = LazyDict({
 """Dictionary mapping starting quote sequences to regular expressions that
 match the contents of a string beginning with those quotes (not including the
 terminating quotes)"""
+
+
+@lazyobject
+def RE_COMPLETE_STRING():
+    ptrn = ('^' + _RE_STRING_START + '(?P<quote>' + "|".join(_STRINGS) + ')' +
+            '.*?(?P=quote)$')
+    return re.compile(ptrn, re.DOTALL)
 
 
 def check_for_partial_string(x):
@@ -1689,7 +1772,7 @@ def normabspath(p):
 
 def expanduser_abs_path(inp):
     """ Provides user expanded absolute path """
-    return os.path.abspath(os.path.expanduser(inp))
+    return os.path.abspath(expanduser(inp))
 
 
 WINDOWS_DRIVE_MATCHER = LazyObject(lambda: re.compile(r'^\w:'),
@@ -1847,3 +1930,8 @@ def uncapturable(f):
     """
     f.__xonsh_capturable__ = False
     return f
+
+
+def carriage_return():
+    """Writes a carriage return to stdout, and nothing else."""
+    print('\r', flush=True, end='')
