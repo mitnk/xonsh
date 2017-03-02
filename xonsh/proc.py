@@ -539,6 +539,7 @@ class PopenThread(threading.Thread):
         if on_main_thread():
             self.old_int_handler = signal.signal(signal.SIGINT,
                                                  self._signal_int)
+            mlog.log('proc 542 - set SIGINT handler')
             if ON_POSIX:
                 self.old_tstp_handler = signal.signal(signal.SIGTSTP,
                                                       self._signal_tstp)
@@ -752,13 +753,16 @@ class PopenThread(threading.Thread):
 
     def _signal_int(self, signum, frame):
         """Signal handler for SIGINT - Ctrl+C may have been pressed."""
+        mlog.log('proc 755 - got SIGINT in PopenThread')
         self.send_signal(signum)
         if self.proc is not None and self.proc.poll() is not None:
             self._restore_sigint(frame=frame)
+            return
         if on_main_thread():
             signal.pthread_kill(threading.get_ident(), signal.SIGINT)
 
     def _restore_sigint(self, frame=None):
+        mlog.log('proc 765 - restore sigint handler')
         old = self.old_int_handler
         if old is not None:
             if on_main_thread():
