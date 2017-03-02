@@ -753,7 +753,10 @@ class PopenThread(threading.Thread):
 
     def _signal_int(self, signum, frame):
         """Signal handler for SIGINT - Ctrl+C may have been pressed."""
-        mlog.log('proc 755 - got SIGINT in PopenThread')
+        pl = None
+        if self.proc:
+            pl = self.proc.poll()
+        mlog.log('proc 755 - got SIGINT in PopenThread: proc:{} poll:{}'.format(self.proc, pl))
         self.send_signal(signum)
         if self.proc is not None and self.proc.poll() is not None:
             self._restore_sigint(frame=frame)
