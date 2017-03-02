@@ -551,11 +551,17 @@ class PopenThread(threading.Thread):
         # start up process
         if ON_WINDOWS and stdout is not None:
             os.set_handle_inheritable(stdout.fileno(), False)
-        self.proc = proc = subprocess.Popen(*args,
-                                            stdin=stdin,
-                                            stdout=stdout,
-                                            stderr=stderr,
-                                            **kwargs)
+
+        try:
+            self.proc = proc = subprocess.Popen(*args,
+                                                stdin=stdin,
+                                                stdout=stdout,
+                                                stderr=stderr,
+                                                **kwargs)
+        except Exception:
+            self._clean_up()
+            raise
+
         self.pid = proc.pid
         self.universal_newlines = uninew = proc.universal_newlines
         if uninew:
@@ -571,9 +577,17 @@ class PopenThread(threading.Thread):
             self.stderr = io.BytesIO()
         self.suspended = False
         self.prevs_are_closed = False
+        mlog.log('proc 574 - before start')
         self.start()
 
     def run(self):
+        mlog.log('proc 577 - run begin')
+        try:
+            return self._run()
+        finally:
+            mlog.log('proc 581 - run done')
+
+    def _run(self):
         """Runs the subprocess by performing a parallel read on stdin if allowed,
         and copying bytes from captured_stdout to stdout and bytes from
         captured_stderr to stderr.
@@ -765,7 +779,7 @@ class PopenThread(threading.Thread):
             signal.pthread_kill(threading.get_ident(), signal.SIGINT)
 
     def _restore_sigint(self, frame=None):
-        mlog.log('proc 765 - restore sigint handler')
+        mlog.log('proc 776 - restore sigint handler')
         old = self.old_int_handler
         if old is not None:
             if on_main_thread():
@@ -871,10 +885,13 @@ class PopenThread(threading.Thread):
         if self.old_winch_handler is not None and on_main_thread():
             signal.signal(signal.SIGWINCH, self.old_winch_handler)
             self.old_winch_handler = None
+        self._clean_up()
+        return rtn
+
+    def _clean_up(self):
         self._restore_sigint()
         self._restore_sigtstp()
         self._restore_sigquit()
-        return rtn
 
     @property
     def returncode(self):
@@ -1761,14 +1778,15 @@ class CommandPipeline:
             if self.starttime is None:
                 self.starttime = time.time()
             try:
-                mlog.log('proc 1749 - spec cmd:{} args:{}'.format(
+                mlog.log('proc 1772 - spec cmd:{} args:{}'.format(
                     spec.cmd, spec.args))
                 proc = spec.run(pipeline_group=pipeline_group)
-                mlog.log('proc 1749 - spec cls: {} proc pid: {}'.format(
+                mlog.log('proc 1775 - spec cls: {} proc pid: {}'.format(
                     spec.cls.__name__, getattr(proc, 'pid', 'nopid')))
-            except XonshError:
+            except XonshError as e:
+                mlog.log('proc 1778 - XonshError: {}'.format(e))
                 self._return_terminal()
-                raise
+                raise e
             if proc.pid and pipeline_group is None and not spec.is_proxy and \
                     self.captured != 'object':
                 pipeline_group = proc.pid
